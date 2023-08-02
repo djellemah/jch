@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = "*"
-serde_json = "*"
+# serde = "*"
+# serde_json = "*"
 # json_stream = {version = "*", git = "https://github.com/alexmaco/json_stream"}
-json_stream = {version = "*", path = "../src/json_stream"}
+# json_stream = {version = "*", path = "../src/json_stream"}
 json-event-parser = "*"
