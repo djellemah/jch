@@ -114,8 +114,41 @@ fn ignore(jev : &mut JsonEvents) {
   }
 }
 
-type Parents<'a> = rpds::List<String>;
-type JsonPath<'a> = rpds::List<String>;
+#[derive(Debug,Clone)]
+enum Step {
+  Key(String),
+  Index(u64),
+}
+
+impl Step {
+  fn plusone(&self) -> Self {
+    match &self {
+      Step::Key(v) => panic!("{v} is not an integer"),
+      Step::Index(v) => Step::Index(v+1),
+    }
+  }
+}
+
+impl std::fmt::Display for Step {
+  fn fmt(&self, f : &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+    match &self {
+      Step::Key(v) => write!(f, "{v}"),
+      Step::Index(v) => write!(f, "{v}"),
+    }
+  }
+}
+
+
+impl From<&str> for Step {
+  fn from(s: &str) -> Self { Self::Key(s.to_string()) }
+}
+
+impl From<u64> for Step {
+  fn from(s: u64) -> Self { Self::Index(s) }
+}
+
+type Parents = rpds::List<Step>;
+type JsonPath = Parents;
 
 fn make_indent(parents : &Parents) -> String {
   let mut indent = String::new();
@@ -189,66 +222,89 @@ fn display_keys(jev : &mut JsonEvents, parents : &Parents) {
   }
 }
 
-fn path_to_string<'a>( path : & Parents<'a> ) -> String {
+fn path_to_string<'a>( path : & Parents ) -> String {
   let mut parent_vec = path.iter().map(|e| e.to_string()).collect::<Vec<String>>();
   parent_vec.reverse();
   parent_vec.join("/")
 }
 
-fn find_path<'a,'b>(jev : &'a mut JsonEvents, parents : Parents<'a>, depth : u64 ) -> Option<Parents<'a>> {
+type Snd = std::sync::mpsc::Sender<Option<JsonPath>>;
+type SndResult = Result<(), std::sync::mpsc::SendError<Option<JsonPath>>>;
+
+fn count_array<'a,'b>(jev : &'a mut JsonEvents, parents : Parents, index : Step, depth : u64, tx : &Snd ) -> SndResult {
+  let mut buf : Vec<u8> = vec![];
+  while let Some(ev) = jev.next_buf(&mut buf) {
+    match ev {
+      JsonEvent::String(_) => tx.send(Some(parents)),
+      JsonEvent::Number(_) => tx.send(Some(parents)),
+      JsonEvent::Boolean(_) => tx.send(Some(parents)),
+      JsonEvent::Null => tx.send(Some(parents)),
+      JsonEvent::StartArray => count_array(jev, parents, Step::Index(0), depth+1, tx),
+      // drop the push [] for the start of the array
+      // JsonEvent::EndArray => { let parents = parents.drop_first().unwrap(); Some(parents) },
+      JsonEvent::EndArray => tx.send(Some(parents)),
+      JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
+      JsonEvent::StartObject =>
+        // Some(parents),
+        find_path(jev, parents, depth+1, tx),
+      // drop the key from the ObjectKey
+      // JsonEvent::EndObject => { let parents = parents.drop_first().unwrap(); Some(parents) },
+      JsonEvent::EndObject => tx.send(Some(parents)),
+      JsonEvent::Eof => tx.send(None),
+    };
+  }
+  Ok(())
+}
+
+fn find_path<'a,'b>(jev : &'a mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
   // if depth > 3 { return Some(parents) };
 
   let mut buf : Vec<u8> = vec![];
   if let Some(ev) = jev.next_buf(&mut buf) {
     match ev {
-      JsonEvent::String(val) => {println!("pre-val: {val}"); Some(parents)},
-      JsonEvent::Number(_) => Some(parents),
-      JsonEvent::Boolean(_) => Some(parents),
-      JsonEvent::Null => Some(parents),
-      JsonEvent::StartArray => count_array(jev, parents, 0, depth+1),
+      JsonEvent::String(_) => tx.send(Some(parents)),
+      JsonEvent::Number(_) => tx.send(Some(parents)),
+      JsonEvent::Boolean(_) => tx.send(Some(parents)),
+      JsonEvent::Null => tx.send(Some(parents)),
+      JsonEvent::StartArray => count_array(jev, parents, Step::Index(0), depth+1, tx),
       // drop the push [] for the start of the array
-      // JsonEvent::EndArray => { let parents = parents.drop_first().unwrap(); Some(parents) },
-      JsonEvent::EndArray => { Some(parents) },
-      JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1),
+      // JsonEvent::EndArray => { let parents = parents.drop_first().unwrap(); tx.send(Some(parents)) },
+      JsonEvent::EndArray => { tx.send(Some(parents)) },
+      JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
       JsonEvent::StartObject =>
-        // Some(parents),
-        find_path(jev, parents, depth+1),
+        // tx.send(Some(parents)),
+        find_path(jev, parents, depth+1, tx),
       // drop the key from the ObjectKey
-      // JsonEvent::EndObject => { let parents = parents.drop_first().unwrap(); Some(parents) },
-      JsonEvent::EndObject => { Some(parents) },
-      JsonEvent::Eof => None,
+      // JsonEvent::EndObject => { let parents = parents.drop_first().unwrap(); tx.send(Some(parents)) }      JsonEvent::EndObject => tx.send(Some(parents)),
+      JsonEvent::Eof => tx.send(None),
     }
   } else {
-     None
+    tx.send(None)
   }
 }
 
 fn main() {
   let istream = make_readable();
   let mut jev = JsonEvents::new(istream);
-  let mut paths = Parents::new();
 
-  // {
-  loop {
-    match find_path(&mut jev, paths.clone(), 0) {
-      Some(found_paths) => {
-        println!("{msg}", msg = path_to_string(&found_paths));
-        paths = match found_paths.drop_first() {
-          Some(p) => p,
-          None => Parents::new(),
-        }
-        // println!("after drop {msg}", msg=path_to_string(&paths));
-        // println!("{}", serde_yaml::to_string(&parents).unwrap_or("serde_yaml cannot parent".to_string())),
+  let (tx, rx) = std::sync::mpsc::channel();
+
+  // consumer thread
+  std::thread::spawn(move || {
+    loop {
+      match rx.recv() {
+        Ok(_) => todo!(),
+        Err(_) => todo!(),
       }
-      None => break,
+    }
+  });
+
+  // producer loop pass the event source (jev) to the
+  // parsers, then
+  loop {
+    match find_path(&mut jev, JsonPath::new(), 0, &tx) {
+      Ok(()) => (),
+      Err(err) => eprintln!("{err}"),
     }
   }
-
-  // while let Some(ev) = jev.next() {
-  //   match ev {
-  //     JsonEvent::StartObject => display_keys(&mut jev, &rpds::List::new()),
-  //     JsonEvent::Eof => break,
-  //     _ => (),
-  //   }
-  // }
 }

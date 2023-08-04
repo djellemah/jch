@@ -14,4 +14,5 @@ edition = "2021"
 json-event-parser = {version = "0.1.1", path = "../src/json-event-parser"}
 countio = "*"
 serde_json = "*"
-rpds = "*"
+rpds = { version = "*", features = ["serde"] }
+serde_yaml = "*"
