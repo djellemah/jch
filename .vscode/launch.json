@@ -10,7 +10,7 @@
             "name": "Debug executable 'cln'",
             "cargo": {
                 "args": [
-                    "build",
+                    "run",
                     "--bin=cln",
                     "--package=cln"
                 ],
@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["../live.json"],
+            "args": ["../things.json"],
             "cwd": "${workspaceFolder}"
         },
         {
