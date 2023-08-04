@@ -3,14 +3,74 @@
 version = 3
 
 [[package]]
+name = "archery"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6cd774058b1b415c4855d8b86436c04bf050c003156fe24bc326fb3fe75c343"
+dependencies = [
+ "static_assertions",
+]
+
+[[package]]
 name = "cln"
 version = "0.1.0"
 dependencies = [
+ "countio",
  "json-event-parser",
+ "rpds",
+ "serde_json",
 ]
+
+[[package]]
+name = "countio"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "deb137baf1ce7c00453689055b2a4311ed34d288cb2e66e892e3142e30dae67f"
+
+[[package]]
+name = "itoa"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af150ab688ff2122fcef229be89cb50dd66af9e01a4ff320cc137eecc9bacc38"
 
 [[package]]
 name = "json-event-parser"
 version = "0.1.1"
+
+[[package]]
+name = "rpds"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32f12e624eaeb74accb9bb48f01cb071427f68115aaafa5689acb372d7e22977"
+checksum = "9bd6ce569b15c331b1e5fd8cf6adb0bf240678b5f0cdc4d0f41e11683f6feba9"
+dependencies = [
+ "archery",
+]
+
+[[package]]
+name = "ryu"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad4cc8da4ef723ed60bced201181d83791ad433213d8c24efffda1eec85d741"
+
+[[package]]
+name = "serde"
+version = "1.0.180"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ea67f183f058fe88a4e3ec6e2788e003840893b91bac4559cabedd00863b3ed"
+
+[[package]]
+name = "serde_json"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "076066c5f1078eac5b722a31827a8832fe108bed65dfa75e233c89f8206e976c"
+dependencies = [
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
