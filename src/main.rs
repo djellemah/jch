@@ -48,6 +48,7 @@ impl JsonEvents {
         // let mut buf : Vec<u8> = Vec::with_capacity(25);
         // try to generate some context
         let mut buf = [0; 80];
+        use std::io::Read;
         let more = match self.reader.reader.read(&mut buf) {
           Ok(n) => String::from_utf8_lossy(&buf[0..n]).to_string(),
           Err(err) => format!("{err:?}"),
@@ -81,8 +82,6 @@ impl JsonEvents {
 // json_event_parser::JsonEvent::ObjectKey(_) => todo!(),
 // json_event_parser::JsonEvent::Eof => todo!(),
 
-use std::io::Read;
-
 use json_event_parser::JsonEvent;
 
 #[allow(dead_code)]
@@ -103,28 +102,6 @@ fn is_object(jev : &mut JsonEvents) -> bool {
   false
 }
 
-#[allow(dead_code)]
-fn next_key(jev : &mut JsonEvents, key : &str) {
-  let mut keys = std::collections::BTreeSet::<String>::new();
-  if is_object(jev) {
-    keys.insert(key.to_string());
-    find_paths(jev)
-  }
-}
-
-#[allow(dead_code)]
-fn find_paths(_jev : &mut JsonEvents) {
-  // let jev = std::rc::Rc::new(jev);
-  let _keys = std::collections::BTreeSet::<String>::new();
-
-  // while let Some(ev) = jev.next() {
-  //   match ev {
-  //     JsonEvent::ObjectKey(key) => next_key(jev, key),
-  //     _ => (),
-  //   }
-  // }
-}
-
 // This is basically xpath or jql in disguise
 #[allow(dead_code)]
 fn ignore(jev : &mut JsonEvents) {
@@ -137,22 +114,32 @@ fn ignore(jev : &mut JsonEvents) {
   }
 }
 
-type Parents<'a> = rpds::List<&'a str>;
+type Parents<'a> = rpds::List<String>;
+type JsonPath<'a> = rpds::List<String>;
 
 fn make_indent(parents : &Parents) -> String {
   let mut indent = String::new();
   for _ in parents { indent.push(' ') };
   indent
 }
+
 fn collect_keys(jev : &mut JsonEvents, parents : &Parents) {
   let mut map : std::collections::BTreeMap<String, serde_json::Value> = std::collections::BTreeMap::new();
 
-  while let Some(ev) = jev.next() {
+  // eurgh. This is a rather unpleasant pattern
+  let mut buf : Vec<u8> = vec![];
+  if let Some(ev) = jev.next_buf(&mut buf) {
     match ev {
       JsonEvent::ObjectKey(key) => {
         map.insert(key.to_string(), collect_value(jev, key, &parents));
+        collect_keys(jev, parents);
       }
-      _ => (),
+      JsonEvent::Null => todo!(),
+      JsonEvent::StartArray => todo!(),
+      JsonEvent::EndArray => todo!(),
+      JsonEvent::StartObject => todo!(),
+      JsonEvent::EndObject => todo!(),
+      other => panic!("unhandled {other:?}"),
     }
   }
 }
@@ -183,7 +170,8 @@ fn display_keys(jev : &mut JsonEvents, parents : &Parents) {
   for _ in parents { indent.push(' ') };
   let mut map : std::collections::BTreeMap<String, Option<serde_json::Value>> = std::collections::BTreeMap::new();
 
-  while let Some(ev) = jev.next() {
+  let mut buf : Vec<u8> = vec![];
+  while let Some(ev) = jev.next_buf(&mut buf) {
     match ev {
       JsonEvent::StartObject => {
         println!("---");
@@ -201,14 +189,66 @@ fn display_keys(jev : &mut JsonEvents, parents : &Parents) {
   }
 }
 
+fn path_to_string<'a>( path : & Parents<'a> ) -> String {
+  let mut parent_vec = path.iter().map(|e| e.to_string()).collect::<Vec<String>>();
+  parent_vec.reverse();
+  parent_vec.join("/")
+}
+
+fn find_path<'a,'b>(jev : &'a mut JsonEvents, parents : Parents<'a>, depth : u64 ) -> Option<Parents<'a>> {
+  // if depth > 3 { return Some(parents) };
+
+  let mut buf : Vec<u8> = vec![];
+  if let Some(ev) = jev.next_buf(&mut buf) {
+    match ev {
+      JsonEvent::String(val) => {println!("pre-val: {val}"); Some(parents)},
+      JsonEvent::Number(_) => Some(parents),
+      JsonEvent::Boolean(_) => Some(parents),
+      JsonEvent::Null => Some(parents),
+      JsonEvent::StartArray => count_array(jev, parents, 0, depth+1),
+      // drop the push [] for the start of the array
+      // JsonEvent::EndArray => { let parents = parents.drop_first().unwrap(); Some(parents) },
+      JsonEvent::EndArray => { Some(parents) },
+      JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1),
+      JsonEvent::StartObject =>
+        // Some(parents),
+        find_path(jev, parents, depth+1),
+      // drop the key from the ObjectKey
+      // JsonEvent::EndObject => { let parents = parents.drop_first().unwrap(); Some(parents) },
+      JsonEvent::EndObject => { Some(parents) },
+      JsonEvent::Eof => None,
+    }
+  } else {
+     None
+  }
+}
+
 fn main() {
   let istream = make_readable();
   let mut jev = JsonEvents::new(istream);
-  while let Some(ev) = jev.next() {
-    match ev {
-      JsonEvent::StartObject => display_keys(&mut jev, &rpds::List::new()),
-      JsonEvent::Eof => break,
-      _ => (),
+  let mut paths = Parents::new();
+
+  // {
+  loop {
+    match find_path(&mut jev, paths.clone(), 0) {
+      Some(found_paths) => {
+        println!("{msg}", msg = path_to_string(&found_paths));
+        paths = match found_paths.drop_first() {
+          Some(p) => p,
+          None => Parents::new(),
+        }
+        // println!("after drop {msg}", msg=path_to_string(&paths));
+        // println!("{}", serde_yaml::to_string(&parents).unwrap_or("serde_yaml cannot parent".to_string())),
+      }
+      None => break,
     }
   }
+
+  // while let Some(ev) = jev.next() {
+  //   match ev {
+  //     JsonEvent::StartObject => display_keys(&mut jev, &rpds::List::new()),
+  //     JsonEvent::Eof => break,
+  //     _ => (),
+  //   }
+  // }
 }
