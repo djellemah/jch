@@ -64,9 +64,10 @@ impl JsonEvents {
 
   #[allow(dead_code)]
   fn next_buf<'a, 'b>(&'a mut self, buf : &'b mut Vec<u8>) -> Option<json_event_parser::JsonEvent<'b>> {
-    match self.reader.read_event(buf).unwrap() {
-      json_event_parser::JsonEvent::Eof => None,
-      event => Some(event),
+    match self.reader.read_event(buf) {
+      Ok(json_event_parser::JsonEvent::Eof) => None,
+      Ok(event) => Some(event),
+      Err(_) => None,
     }
   }
 }
@@ -147,7 +148,8 @@ impl From<u64> for Step {
   fn from(s: u64) -> Self { Self::Index(s) }
 }
 
-type Parents = rpds::List<Step>;
+type Parents = rpds::List<Step, archery::ArcK>;
+// type Parents = rpds::List<Step>;
 type JsonPath = Parents;
 
 fn make_indent(parents : &Parents) -> String {
@@ -222,36 +224,39 @@ fn display_keys(jev : &mut JsonEvents, parents : &Parents) {
   }
 }
 
-fn path_to_string<'a>( path : & Parents ) -> String {
+fn path_to_string( path : & Parents ) -> String {
   let mut parent_vec = path.iter().map(|e| e.to_string()).collect::<Vec<String>>();
   parent_vec.reverse();
   parent_vec.join("/")
 }
 
-type Snd = std::sync::mpsc::Sender<Option<JsonPath>>;
+// type Snd = std::sync::mpsc::Sender<Option<JsonPath>>;
+type Snd = std::sync::mpsc::SyncSender<Option<JsonPath>>;
 type SndResult = Result<(), std::sync::mpsc::SendError<Option<JsonPath>>>;
 
-fn count_array<'a,'b>(jev : &'a mut JsonEvents, parents : Parents, index : Step, depth : u64, tx : &Snd ) -> SndResult {
+fn count_array<'a,'b>(jev : &'a mut JsonEvents, parents : Parents, index : u64, depth : u64, tx : &Snd ) -> SndResult {
+  #[allow(unused_mut)]
+  let mut index = index.clone();
   let mut buf : Vec<u8> = vec![];
   while let Some(ev) = jev.next_buf(&mut buf) {
-    match ev {
-      JsonEvent::String(_) => tx.send(Some(parents)),
-      JsonEvent::Number(_) => tx.send(Some(parents)),
-      JsonEvent::Boolean(_) => tx.send(Some(parents)),
-      JsonEvent::Null => tx.send(Some(parents)),
-      JsonEvent::StartArray => count_array(jev, parents, Step::Index(0), depth+1, tx),
-      // drop the push [] for the start of the array
-      // JsonEvent::EndArray => { let parents = parents.drop_first().unwrap(); Some(parents) },
-      JsonEvent::EndArray => tx.send(Some(parents)),
-      JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
-      JsonEvent::StartObject =>
-        // Some(parents),
-        find_path(jev, parents, depth+1, tx),
-      // drop the key from the ObjectKey
-      // JsonEvent::EndObject => { let parents = parents.drop_first().unwrap(); Some(parents) },
-      JsonEvent::EndObject => tx.send(Some(parents)),
+    let loop_parents = parents.push_front(index.into());
+    let res = match ev {
+      JsonEvent::String(_) => tx.send(Some(loop_parents.clone())),
+      JsonEvent::Number(_) => tx.send(Some(loop_parents.clone())),
+      JsonEvent::Boolean(_) => tx.send(Some(loop_parents.clone())),
+      JsonEvent::Null => tx.send(Some(loop_parents.clone())),
+      JsonEvent::StartArray => count_array(jev, loop_parents, 0, depth+1, tx),
+      JsonEvent::EndArray => return tx.send(Some(loop_parents.clone())),
+      JsonEvent::ObjectKey(key) => find_path(jev, loop_parents.push_front(key.into()), depth+1, tx),
+      JsonEvent::StartObject => find_path(jev, loop_parents.clone(), depth+1, tx),
+      JsonEvent::EndObject => tx.send(Some(loop_parents.clone())),
       JsonEvent::Eof => tx.send(None),
     };
+    match res {
+        Ok(()) => (),
+        err => return err,
+    }
+    // index += 1;
   }
   Ok(())
 }
@@ -266,7 +271,7 @@ fn find_path<'a,'b>(jev : &'a mut JsonEvents, parents : Parents, depth : u64, tx
       JsonEvent::Number(_) => tx.send(Some(parents)),
       JsonEvent::Boolean(_) => tx.send(Some(parents)),
       JsonEvent::Null => tx.send(Some(parents)),
-      JsonEvent::StartArray => count_array(jev, parents, Step::Index(0), depth+1, tx),
+      JsonEvent::StartArray => count_array(jev, parents, 0, depth+1, tx),
       // drop the push [] for the start of the array
       // JsonEvent::EndArray => { let parents = parents.drop_first().unwrap(); tx.send(Some(parents)) },
       JsonEvent::EndArray => { tx.send(Some(parents)) },
@@ -275,7 +280,7 @@ fn find_path<'a,'b>(jev : &'a mut JsonEvents, parents : Parents, depth : u64, tx
         // tx.send(Some(parents)),
         find_path(jev, parents, depth+1, tx),
       // drop the key from the ObjectKey
-      // JsonEvent::EndObject => { let parents = parents.drop_first().unwrap(); tx.send(Some(parents)) }      JsonEvent::EndObject => tx.send(Some(parents)),
+      JsonEvent::EndObject => tx.send(Some(parents)),
       JsonEvent::Eof => tx.send(None),
     }
   } else {
@@ -287,14 +292,15 @@ fn main() {
   let istream = make_readable();
   let mut jev = JsonEvents::new(istream);
 
-  let (tx, rx) = std::sync::mpsc::channel();
+  let (tx, rx) = std::sync::mpsc::sync_channel(4096);
 
   // consumer thread
   std::thread::spawn(move || {
     loop {
       match rx.recv() {
-        Ok(_) => todo!(),
-        Err(_) => todo!(),
+        Ok(Some(json_path)) => println!("{}", path_to_string(&json_path)),
+        Ok(None) => break,
+        Err(err) => { eprintln!("{err}"); break },
       }
     }
   });
@@ -302,9 +308,9 @@ fn main() {
   // producer loop pass the event source (jev) to the
   // parsers, then
   loop {
-    match find_path(&mut jev, JsonPath::new(), 0, &tx) {
+    match find_path(&mut jev, JsonPath::new_sync(), 0, &tx) {
       Ok(()) => (),
-      Err(err) => eprintln!("{err}"),
+      Err(err) => { eprintln!("{err}"); break },
     }
   }
 }

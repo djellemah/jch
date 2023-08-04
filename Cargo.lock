@@ -15,6 +15,7 @@ dependencies = [
 name = "cln"
 version = "0.1.0"
 dependencies = [
+ "archery",
  "countio",
  "json-event-parser",
  "rpds",
