@@ -235,8 +235,7 @@ fn path_to_string( path : & Parents ) -> String {
 type Snd = std::sync::mpsc::SyncSender<Option<JsonPath>>;
 type SndResult = Result<(), std::sync::mpsc::SendError<Option<JsonPath>>>;
 
-fn count_array<'a,'b>(jev : &'a mut JsonEvents, parents : Parents, index : u64, depth : u64, tx : &Snd ) -> SndResult {
-  #[allow(unused_mut)]
+fn count_array(jev : &mut JsonEvents, parents : Parents, index : u64, depth : u64, tx : &Snd ) -> SndResult {
   let mut index = index.clone();
   let mut buf : Vec<u8> = vec![];
   while let Some(ev) = jev.next_buf(&mut buf) {
@@ -263,7 +262,7 @@ fn count_array<'a,'b>(jev : &'a mut JsonEvents, parents : Parents, index : u64, 
   Ok(())
 }
 
-fn handle_object<'a>(jev : &'a mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
+fn handle_object(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
   let mut buf : Vec<u8> = vec![];
   let _spath = path_to_string(&parents);
   while let Some(ev) = jev.next_buf(&mut buf) {
@@ -275,9 +274,7 @@ fn handle_object<'a>(jev : &'a mut JsonEvents, parents : Parents, depth : u64, t
       JsonEvent::Null => tx.send(Some(parents.clone())),
       JsonEvent::StartArray => count_array(jev, parents.clone(), 0, depth+1, tx),
       JsonEvent::EndArray => panic!("should never receive EndArray in find_path {}", path_to_string(&parents)),
-      // add new element to path
       JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
-
       JsonEvent::StartObject => find_path(jev, parents.clone(), depth+1, tx),
       JsonEvent::EndObject => return Ok(()),
       // fin
@@ -291,7 +288,7 @@ fn handle_object<'a>(jev : &'a mut JsonEvents, parents : Parents, depth : u64, t
   Ok(())
 }
 
-fn find_path<'a>(jev : &'a mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
+fn find_path(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
   let mut buf : Vec<u8> = vec![];
   let _spath = path_to_string(&parents);
   if let Some(ev) = jev.next_buf(&mut buf) {
