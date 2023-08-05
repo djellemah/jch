@@ -135,7 +135,7 @@ impl std::fmt::Display for Step {
   fn fmt(&self, f : &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     match &self {
       Step::Key(v) => write!(f, "{v}"),
-      Step::Index(v) => write!(f, "{v}"),
+      Step::Index(v) => write!(f, "[{v}]"),
     }
   }
 }
