@@ -149,7 +149,9 @@ impl From<u64> for Step {
   fn from(s: u64) -> Self { Self::Index(s) }
 }
 
-type Parents = rpds::List<Step, archery::ArcK>;
+// https://docs.rs/rpds/latest/rpds/list/struct.List.html
+// type Parents = rpds::List<Step, archery::ArcK>;
+type Parents = rpds::List<Step>;
 // type Parents = rpds::List<Step>;
 type JsonPath = Parents;
 
@@ -232,24 +234,46 @@ fn path_to_string( path : & Parents ) -> String {
 }
 
 // type Snd = std::sync::mpsc::Sender<Option<JsonPath>>;
-type Event = Option<(u64,JsonPath)>;
+type SendPath = Vec<Step>;
+type Event = Option<(u64,SendPath)>;
 type Snd = std::sync::mpsc::SyncSender<Event>;
 type SndResult = Result<(), std::sync::mpsc::SendError<Event>>;
+
+// fn package(path : &JsonPath) -> Vec<Step> {
+//   path.iter().map(|step| step.clone()).collect::<Vec<Step>>()
+// }
+// macro_rules! package {
+//   ($tx:ident,$depth:ident,&$parents:expr) => {
+//     $tx.send( Some(($depth,$parents.clone())) )
+//   };
+//   ($tx:ident,$depth:ident,$parents:expr) => {
+//     $tx.send(Some(($depth,$parents)))
+//   };
+// }
+
+macro_rules! package {
+  ($tx:ident,$depth:ident,&$parents:expr) => {
+    $tx.send( Some(( $depth, $parents.iter().map(|s| s.clone()).collect::<Vec<Step>>() )) )
+  };
+  ($tx:ident,$depth:ident,$parents:expr) => {
+    $tx.send(Some(( $depth, $parents.iter().map(|s| s.clone()).collect::<Vec<Step>>() )))
+  };
+}
 
 fn count_array(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
   let mut index = 0;
   let mut buf : Vec<u8> = vec![];
-  use json_event_parser::JsonEvent::*;
   while let Some(ev) = jev.next_buf(&mut buf) {
     let loop_parents = parents.push_front(index.into());
+    use json_event_parser::JsonEvent::*;
     let res = match ev {
-      String(_) => tx.send(Some((depth,loop_parents))),
-      Number(_) => tx.send(Some((depth,loop_parents))),
-      Boolean(_) => tx.send(Some((depth,loop_parents))),
-      Null => tx.send(Some((depth,loop_parents))),
+      String(_) => package!(tx,depth,loop_parents),
+      Number(_) => package!(tx,depth,loop_parents),
+      Boolean(_) => package!(tx,depth,loop_parents),
+      Null => package!(tx,depth,loop_parents),
 
       StartArray => count_array(jev, loop_parents, depth+1, tx),
-      EndArray => return tx.send(Some((depth,loop_parents))),
+      EndArray => return package!(tx,depth,loop_parents),
       // ObjectKey(key) => find_path(jev, loop_parents.push_front(key.into()), depth+1, tx),
       StartObject => handle_object(jev, loop_parents, depth+1, tx),
       ObjectKey(_) => panic!("should never receive ObjectKey in count_array {}", path_to_string(&parents)),
@@ -271,15 +295,15 @@ fn handle_object(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Sn
   while let Some(ev) = jev.next_buf(&mut buf) {
     let res = match ev {
       // ok we have a leaf, so display the path
-      String(_) => tx.send(Some((depth,parents.clone()))),
-      Number(_) => tx.send(Some((depth,parents.clone()))),
-      Boolean(_) => tx.send(Some((depth,parents.clone()))),
-      Null => tx.send(Some((depth,parents.clone()))),
+      String(_) => package!(tx,depth,&parents),
+      Number(_) => package!(tx,depth,&parents),
+      Boolean(_) => package!(tx,depth,&parents),
+      Null => package!(tx,depth,&parents),
 
       StartArray => count_array(jev, parents.clone(), depth+1, tx),
       EndArray => panic!("should never receive EndArray in handle_object {}", path_to_string(&parents)),
       ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
-      StartObject => find_path(jev, parents, depth+1, tx),
+      StartObject => find_path(jev, parents.clone(), depth+1, tx),
       EndObject => return Ok(()),
       // fin
       Eof => tx.send(None),
@@ -298,10 +322,10 @@ fn find_path(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) 
   if let Some(ev) = jev.next_buf(&mut buf) {
     match ev {
       // ok we have a leaf, so display the path
-      String(_) => tx.send(Some((depth,parents))),
-      Number(_) => tx.send(Some((depth,parents))),
-      Boolean(_) => tx.send(Some((depth,parents))),
-      Null => tx.send(Some((depth,parents))),
+      String(_) => package!(tx,depth,parents),
+      Number(_) => package!(tx,depth,parents),
+      Boolean(_) => package!(tx,depth,parents),
+      Null => package!(tx,depth,parents),
 
       StartArray => count_array(jev, parents, depth+1, tx),
       EndArray => panic!("should never receive EndArray in find_path {}", path_to_string(&parents)),
@@ -316,14 +340,22 @@ fn find_path(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) 
   }
 }
 
+fn append_step(steps : &Vec<Step>, last : Step) -> Vec<Step> {
+  let mut more_steps = steps.clone();
+  more_steps.push(last);
+  more_steps
+}
+
 fn channels(jev : &mut JsonEvents) {
-  let (tx, rx) = std::sync::mpsc::sync_channel(4096);
+  let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(4096);
 
   // consumer thread
   std::thread::spawn(move || {
     loop {
       match rx.recv() {
-        Ok(Some((depth,json_path))) => println!("{depth}:{}", path_to_string(&json_path)),
+        Ok(Some((depth,path))) => {
+          println!("{depth}:{}", path.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("/"))
+        },
         Ok(None) => break,
         Err(err) => { eprintln!("ending consumer: {err}"); break },
       }
@@ -333,7 +365,7 @@ fn channels(jev : &mut JsonEvents) {
   // producer loop pass the event source (jev) to the
   // parsers, then
   loop {
-    match find_path(jev, JsonPath::new_sync(), 0, &tx) {
+    match find_path(jev, JsonPath::new(), 0, &tx) {
       Ok(()) => (),
       Err(err) => { eprintln!("ending producer {err}"); break },
     }
