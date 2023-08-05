@@ -239,19 +239,19 @@ type Event = Option<(u64,SendPath)>;
 type Snd = std::sync::mpsc::SyncSender<Event>;
 type SndResult = Result<(), std::sync::mpsc::SendError<Event>>;
 
-// fn package(path : &JsonPath) -> Vec<Step> {
-//   path.iter().map(|step| step.clone()).collect::<Vec<Step>>()
-// }
-// macro_rules! package {
-//   ($tx:ident,$depth:ident,&$parents:expr) => {
-//     $tx.send( Some(($depth,$parents.clone())) )
-//   };
-//   ($tx:ident,$depth:ident,$parents:expr) => {
-//     $tx.send(Some(($depth,$parents)))
-//   };
-// }
+// for sending the same Path representation over the channel as the one that's constructed
+macro_rules! package_same {
+  ($tx:ident,$depth:ident,&$parents:expr) => {
+    $tx.send( Some(($depth,$parents.clone())) )
+  };
+  ($tx:ident,$depth:ident,$parents:expr) => {
+    $tx.send(Some(($depth,$parents)))
+  };
+}
 
+// send a different Path representation over the channel.
 macro_rules! package {
+  // see previous to distinguish where clone() is needed
   ($tx:ident,$depth:ident,&$parents:expr) => {
     $tx.send( Some(( $depth, $parents.iter().map(|s| s.clone()).collect::<Vec<Step>>() )) )
   };
@@ -347,7 +347,11 @@ fn append_step(steps : &Vec<Step>, last : Step) -> Vec<Step> {
 }
 
 fn channels(jev : &mut JsonEvents) {
-  let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(4096);
+  // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(4096);
+  // this seems to be about optimal wrt performance
+  let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(8192);
+  // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(16384);
+  // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(32768);
 
   // consumer thread
   std::thread::spawn(move || {
