@@ -316,10 +316,7 @@ fn find_path(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) 
   }
 }
 
-fn main() {
-  let istream = make_readable();
-  let mut jev = JsonEvents::new(istream);
-
+fn channels(jev : &mut JsonEvents) {
   let (tx, rx) = std::sync::mpsc::sync_channel(4096);
 
   // consumer thread
@@ -336,9 +333,15 @@ fn main() {
   // producer loop pass the event source (jev) to the
   // parsers, then
   loop {
-    match find_path(&mut jev, JsonPath::new_sync(), 0, &tx) {
+    match find_path(jev, JsonPath::new_sync(), 0, &tx) {
       Ok(()) => (),
       Err(err) => { eprintln!("ending producer {err}"); break },
     }
   }
+}
+
+fn main() {
+  let istream = make_readable();
+  let mut jev = JsonEvents::new(istream);
+  channels(&mut jev);
 }
