@@ -232,25 +232,29 @@ fn path_to_string( path : & Parents ) -> String {
 }
 
 // type Snd = std::sync::mpsc::Sender<Option<JsonPath>>;
-type Snd = std::sync::mpsc::SyncSender<Option<JsonPath>>;
-type SndResult = Result<(), std::sync::mpsc::SendError<Option<JsonPath>>>;
+type Event = Option<(u64,JsonPath)>;
+type Snd = std::sync::mpsc::SyncSender<Event>;
+type SndResult = Result<(), std::sync::mpsc::SendError<Event>>;
 
 fn count_array(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
   let mut index = 0;
   let mut buf : Vec<u8> = vec![];
+  use json_event_parser::JsonEvent::*;
   while let Some(ev) = jev.next_buf(&mut buf) {
     let loop_parents = parents.push_front(index.into());
     let res = match ev {
-      JsonEvent::String(_) => tx.send(Some(loop_parents)),
-      JsonEvent::Number(_) => tx.send(Some(loop_parents)),
-      JsonEvent::Boolean(_) => tx.send(Some(loop_parents)),
-      JsonEvent::Null => tx.send(Some(loop_parents)),
-      JsonEvent::StartArray => count_array(jev, loop_parents, 0, depth+1, tx),
-      JsonEvent::EndArray => return tx.send(Some(loop_parents)),
-      JsonEvent::ObjectKey(key) => find_path(jev, loop_parents.push_front(key.into()), depth+1, tx),
-      JsonEvent::StartObject => handle_object(jev, loop_parents, depth+1, tx),
-      JsonEvent::EndObject => Ok(()),
-      JsonEvent::Eof => tx.send(None),
+      String(_) => tx.send(Some((depth,loop_parents))),
+      Number(_) => tx.send(Some((depth,loop_parents))),
+      Boolean(_) => tx.send(Some((depth,loop_parents))),
+      Null => tx.send(Some((depth,loop_parents))),
+
+      StartArray => count_array(jev, loop_parents, depth+1, tx),
+      EndArray => return tx.send(Some((depth,loop_parents))),
+      // ObjectKey(key) => find_path(jev, loop_parents.push_front(key.into()), depth+1, tx),
+      StartObject => handle_object(jev, loop_parents, depth+1, tx),
+      ObjectKey(_) => panic!("should never receive ObjectKey in count_array {}", path_to_string(&parents)),
+      EndObject => panic!("should never receive EndObject in count_array {}", path_to_string(&parents)),
+      Eof => tx.send(None),
     };
     match res {
         Ok(()) => (),
@@ -263,20 +267,22 @@ fn count_array(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd 
 
 fn handle_object(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
   let mut buf : Vec<u8> = vec![];
+  use json_event_parser::JsonEvent::*;
   while let Some(ev) = jev.next_buf(&mut buf) {
     let res = match ev {
       // ok we have a leaf, so display the path
-      JsonEvent::String(_) => tx.send(Some(parents.clone())),
-      JsonEvent::Number(_) => tx.send(Some(parents.clone())),
-      JsonEvent::Boolean(_) => tx.send(Some(parents.clone())),
-      JsonEvent::Null => tx.send(Some(parents.clone())),
+      String(_) => tx.send(Some((depth,parents.clone()))),
+      Number(_) => tx.send(Some((depth,parents.clone()))),
+      Boolean(_) => tx.send(Some((depth,parents.clone()))),
+      Null => tx.send(Some((depth,parents.clone()))),
 
-      JsonEvent::EndArray => panic!("should never receive EndArray in find_path {}", path_to_string(&parents)),
-      JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
-      JsonEvent::StartObject => find_path(jev, parents.clone(), depth+1, tx),
-      JsonEvent::EndObject => return Ok(()),
+      StartArray => count_array(jev, parents.clone(), depth+1, tx),
+      EndArray => panic!("should never receive EndArray in handle_object {}", path_to_string(&parents)),
+      ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
+      StartObject => find_path(jev, parents, depth+1, tx),
+      EndObject => return Ok(()),
       // fin
-      JsonEvent::Eof => tx.send(None),
+      Eof => tx.send(None),
     };
     match res {
         Ok(()) => (),
@@ -288,23 +294,22 @@ fn handle_object(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Sn
 
 fn find_path(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
   let mut buf : Vec<u8> = vec![];
-  let _spath = path_to_string(&parents);
+  use json_event_parser::JsonEvent::*;
   if let Some(ev) = jev.next_buf(&mut buf) {
     match ev {
       // ok we have a leaf, so display the path
-      JsonEvent::String(_) => tx.send(Some(parents)),
-      JsonEvent::Number(_) => tx.send(Some(parents)),
-      JsonEvent::Boolean(_) => tx.send(Some(parents)),
-      JsonEvent::Null => tx.send(Some(parents)),
+      String(_) => tx.send(Some((depth,parents))),
+      Number(_) => tx.send(Some((depth,parents))),
+      Boolean(_) => tx.send(Some((depth,parents))),
+      Null => tx.send(Some((depth,parents))),
 
-      JsonEvent::EndArray => panic!("should never receive EndArray in find_path {}", path_to_string(&parents)),
-      // add new element to path
-      JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
-
-      JsonEvent::StartObject => handle_object(jev, parents, depth+1, tx),
-      JsonEvent::EndObject => Ok(()),
+      StartArray => count_array(jev, parents, depth+1, tx),
+      EndArray => panic!("should never receive EndArray in find_path {}", path_to_string(&parents)),
+      ObjectKey(_) => panic!("should never receive ObjectKey in find_path {}", path_to_string(&parents)),
+      StartObject => handle_object(jev, parents, depth+1, tx),
+      EndObject => panic!("should never receive EndObject in find_path {}", path_to_string(&parents)),
       // fin
-      JsonEvent::Eof => tx.send(None),
+      Eof => tx.send(None),
     }
   } else {
     tx.send(None)
@@ -321,7 +326,7 @@ fn main() {
   std::thread::spawn(move || {
     loop {
       match rx.recv() {
-        Ok(Some(json_path)) => println!("{}", path_to_string(&json_path)),
+        Ok(Some((depth,json_path))) => println!("{depth}:{}", path_to_string(&json_path)),
         Ok(None) => break,
         Err(err) => { eprintln!("ending consumer: {err}"); break },
       }
