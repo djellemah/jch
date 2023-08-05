@@ -235,8 +235,8 @@ fn path_to_string( path : & Parents ) -> String {
 type Snd = std::sync::mpsc::SyncSender<Option<JsonPath>>;
 type SndResult = Result<(), std::sync::mpsc::SendError<Option<JsonPath>>>;
 
-fn count_array(jev : &mut JsonEvents, parents : Parents, index : u64, depth : u64, tx : &Snd ) -> SndResult {
-  let mut index = index.clone();
+fn count_array(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
+  let mut index = 0;
   let mut buf : Vec<u8> = vec![];
   while let Some(ev) = jev.next_buf(&mut buf) {
     let loop_parents = parents.push_front(index.into());
@@ -270,7 +270,7 @@ fn handle_object(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Sn
       JsonEvent::Number(_) => tx.send(Some(parents.clone())),
       JsonEvent::Boolean(_) => tx.send(Some(parents.clone())),
       JsonEvent::Null => tx.send(Some(parents.clone())),
-      JsonEvent::StartArray => count_array(jev, parents.clone(), 0, depth+1, tx),
+
       JsonEvent::EndArray => panic!("should never receive EndArray in find_path {}", path_to_string(&parents)),
       JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
       JsonEvent::StartObject => find_path(jev, parents.clone(), depth+1, tx),
@@ -296,7 +296,7 @@ fn find_path(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) 
       JsonEvent::Number(_) => tx.send(Some(parents)),
       JsonEvent::Boolean(_) => tx.send(Some(parents)),
       JsonEvent::Null => tx.send(Some(parents)),
-      JsonEvent::StartArray => count_array(jev, parents, 0, depth+1, tx),
+
       JsonEvent::EndArray => panic!("should never receive EndArray in find_path {}", path_to_string(&parents)),
       // add new element to path
       JsonEvent::ObjectKey(key) => find_path(jev, parents.push_front(key.into()), depth+1, tx),
