@@ -399,7 +399,7 @@ macro_rules! package {
   };
 }
 
-// This really just becomes a place to hand match_path and maybe_send_value without threading
+// This really just becomes a place to hang match_path and maybe_send_value without threading
 // those functions through the JsonEvent handlers.
 trait Handler {
   // fn match_path : fn(&JsonPath) -> bool;
