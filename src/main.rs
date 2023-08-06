@@ -155,6 +155,13 @@ type Parents = rpds::List<Step>;
 // type Parents = rpds::List<Step>;
 type JsonPath = Parents;
 
+#[allow(dead_code)]
+fn append_step(steps : &Vec<Step>, last : Step) -> Vec<Step> {
+  let mut more_steps = steps.clone();
+  more_steps.push(last);
+  more_steps
+}
+
 fn make_indent(parents : &Parents) -> String {
   let mut indent = String::new();
   for _ in parents { indent.push(' ') };
@@ -227,20 +234,31 @@ fn display_keys(jev : &mut JsonEvents, parents : &Parents) {
   }
 }
 
-fn path_to_string( path : & Parents ) -> String {
-  let mut parent_vec = path.iter().map(|e| e.to_string()).collect::<Vec<String>>();
-  parent_vec.reverse();
-  parent_vec.join("/")
+#[derive(Debug)]
+struct SendPath(Vec<Step>);
+
+impl SendPath {
+  fn from(path_list : &JsonPath) -> Self {
+    let mut backward_steps = path_list.iter().map(std::clone::Clone::clone).collect::<Vec<Step>>();
+    backward_steps.reverse();
+    Self(backward_steps)
+  }
 }
 
-type SendPath = Vec<Step>;
-// type Event = Option<(u64,SendPath)>;
+impl std::fmt::Display for SendPath {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let string_parts = self.0.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
+    // parent_vec.reverse();
+    let repr = string_parts.join("/");
 
-#[allow(dead_code)]
+    write!(f,"{repr}")
+  }
+}
+
 #[derive(Debug)]
 enum Event {
   Path(u64,SendPath),
-  Value(serde_json::Value),
+  Value(SendPath,serde_json::Value),
   Finished,
 }
 
@@ -250,7 +268,6 @@ trait Sender<T> {
 }
 
 // This is a lot of machinery just to call a function :-\
-#[allow(unused_variables)]
 mod fn_snd {
   pub struct FnSnd<T>(fn(T) -> ());
 
@@ -267,27 +284,37 @@ mod fn_snd {
   }
 
   use super::JsonEvents;
-  use super::find_path;
   use super::JsonPath;
   use super::Event;
 
   pub fn event_loop(jev : &mut JsonEvents) {
     let handler = FnSnd(|t : Event| {
       match t {
-        Event::Path(depth,path) => {
-          let mut path = path.iter().map(|s| s.to_string()).collect::<Vec<String>>();
-          path.reverse();
-
-          println!("{depth}:{}", path.join("/"))
-        },
-        Event::Value(v) => todo!("handle Event::Value {v}"),
+        Event::Path(_depth,_path) => (), //println!("{depth},{path}"),
+        Event::Value(p,v) => println!("{p} => {v}"),
         Event::Finished => (),
       }
     });
 
-    let match_path = |_path : &JsonPath| {false};
+    let match_path = |path_list : &JsonPath| {
+      if path_list.len() < 3 {
+        let path = super::SendPath::from(path_list);
+        println!("{path}");
+        true
+      } else {
+        false
+      }
+      // println!("first: {:?}", path.first());
+      // match path.first() {
+      //   Some(super::Step::Key(v)) => &v[..] == "images",
+      //   Some(super::Step::Index(_n)) => false,
+      //   None => false,
+      // }
+    };
 
-    match super::yield_values::<FnSnd<Event>>(jev, JsonPath::new(), 0, match_path, &handler ) {
+    use super::Handler;
+    let visitor = super::Valuer(match_path);
+    match visitor.find_path::<FnSnd<Event>>(jev, JsonPath::new(), 0, &handler ) {
       Ok(()) => (),
       Err(err) => { eprintln!("ending event reading {err:?}") },
     }
@@ -295,7 +322,6 @@ mod fn_snd {
 }
 
 mod ch_snd {
-  use super::find_path;
   use super::JsonPath;
   use super::Event;
 
@@ -323,12 +349,9 @@ mod ch_snd {
     std::thread::spawn(move || {
       loop {
         match rx.recv() {
-          Ok(Event::Path(depth,path)) => {
-            println!("{depth}:{}", path.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("/"))
-          },
+          Ok(Event::Path(depth,path)) => println!("{depth}:{}", path),
           Ok(Event::Finished) => break,
-          Ok(Event::Value(v)) => todo!("handle Event::Value {v}"),
-
+          Ok(Event::Value(p,v)) => println!("{p} => {v}"),
           Err(err) => { eprintln!("ending consumer: {err}"); break },
         }
       }
@@ -336,9 +359,11 @@ mod ch_snd {
 
     // wrap tx in a thing that implements Sender
     let tx = ChSender(tx);
+    use super::Handler;
+    let visitor = super::Plain;
     // producer loop pass the event source (jev) to the
     loop {
-      match find_path::<ChSender<Event>>(jev, JsonPath::new(), 0, &tx ) {
+      match visitor.find_path::<ChSender<Event>>(jev, JsonPath::new(), 0, &tx ) {
         Ok(()) => (),
         Err(err) => { eprintln!("ending producer {err}"); break },
       }
@@ -364,7 +389,7 @@ macro_rules! package {
     $tx.send( Event::Path( 0, $parents.iter().map(|s| s.clone()).collect::<Vec<Step>>() ) )
   };
   ($tx:ident,0,$parents:expr) => {
-    $tx.send( Event::Path( 0, $parents.iter().map(|s| s.clone()).collect::<Vec<Step>>() ) )
+    $tx.send( Event::Path( 0, SendPath($parents.iter().map(|s| s.clone()).collect::<Vec<Step>>())) )
   };
   ($tx:ident,$depth:ident,&$parents:expr) => {
     $tx.send( Event::Path( $depth, $parents.iter().map(|s| s.clone()).collect::<Vec<Step>>() ) )
@@ -374,22 +399,16 @@ macro_rules! package {
   };
 }
 
+// This really just becomes a place to hand match_path and maybe_send_value without threading
+// those functions through the JsonEvent handlers.
 trait Handler {
   // fn match_path : fn(&JsonPath) -> bool;
   fn match_path(&self, path : &JsonPath) -> bool;
-  fn count_array<Snd : Sender<Event>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError>;
-  fn handle_object<Snd : Sender<Event>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError>;
-  fn find_path<Snd : Sender<Event>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError>;
-}
 
-struct Plain;
-
-impl Plain {
-}
-
-impl Handler for Plain {
-  fn match_path(&self, path : &JsonPath) -> bool {
-    true
+  // default implementation that does nothing and returns OK
+  #[allow(unused_variables)]
+  fn maybe_send_value<Snd : Sender<Event>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError> {
+    Ok(())
   }
 
   fn count_array<Snd : Sender<Event>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
@@ -399,17 +418,17 @@ impl Handler for Plain {
       let loop_parents = parents.push_front(index.into());
       use json_event_parser::JsonEvent::*;
       let res = match ev {
-        String(_) => package!(tx,depth,loop_parents),
-        Number(_) => package!(tx,depth,loop_parents),
-        Boolean(_) => package!(tx,depth,loop_parents),
-        Null => package!(tx,depth,loop_parents),
+        // ok we have a leaf, so display the path
+        String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
         StartArray => self.count_array(jev, loop_parents, depth+1, tx),
         EndArray => return Ok(()), // do not send path, this is +1 past the end of the array
+
         // ObjectKey(key) => find_path(jev, loop_parents.push_front(key.into()), depth+1, tx),
         StartObject => self.handle_object(jev, loop_parents, depth+1, tx),
-        ObjectKey(_) => panic!("should never receive ObjectKey in count_array {}", path_to_string(&parents)),
-        EndObject => panic!("should never receive EndObject in count_array {}", path_to_string(&parents)),
+        ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
+        EndObject => panic!("should never receive EndObject {parents}"),
+
         Eof => tx.send(Event::Finished),
       };
       match res {
@@ -427,17 +446,15 @@ impl Handler for Plain {
       use json_event_parser::JsonEvent::*;
       let res = match ev {
         // ok we have a leaf, so display the path
-        String(_) => package!(tx,depth,&parents),
-        Number(_) => package!(tx,depth,&parents),
-        Boolean(_) => package!(tx,depth,&parents),
-        Null => package!(tx,depth,&parents),
+        String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
         StartArray => self.count_array(jev, parents.clone(), depth+1, tx),
-        EndArray => panic!("should never receive EndArray in handle_object {}", path_to_string(&parents)),
+        EndArray => panic!("should never receive EndArray {parents}"),
 
         StartObject => self.find_path(jev, parents.clone(), depth+1, tx),
         ObjectKey(key) => self.find_path(jev, parents.push_front(key.into()), depth+1, tx),
         EndObject => return Ok(()),
+
         // fin
         Eof => tx.send(Event::Finished),
       };
@@ -456,17 +473,15 @@ impl Handler for Plain {
       use json_event_parser::JsonEvent::*;
       match ev {
         // ok we have a leaf, so display the path
-        String(_) => package!(tx,depth,parents),
-        Number(_) => package!(tx,depth,parents),
-        Boolean(_) => package!(tx,depth,parents),
-        Null => package!(tx,depth,parents),
+        String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
         StartArray => self.count_array(jev, parents, depth+1, tx),
-        EndArray => panic!("should never receive EndArray in find_path {}", path_to_string(&parents)),
+        EndArray => panic!("should never receive EndArray {parents}"),
 
         StartObject => self.handle_object(jev, parents, depth+1, tx),
-        ObjectKey(_) => panic!("should never receive ObjectKey in find_path {}", path_to_string(&parents)),
-        EndObject => panic!("should never receive EndObject in find_path {}", path_to_string(&parents)),
+        ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
+        EndObject => panic!("should never receive EndObject {parents}"),
+
         // fin
         Eof => tx.send(Event::Finished),
       }
@@ -476,73 +491,61 @@ impl Handler for Plain {
   }
 }
 
-// effectively this is a Visitor pattern. Although it's passive.
-fn maybe_send_value<Snd : Sender<Event>>(path : &JsonPath, &ev : &json_event_parser::JsonEvent, match_path : fn(&JsonPath) -> bool, tx : &Snd)
--> Result<(),Snd::SendError> {
-  use json_event_parser::JsonEvent::*;
-  match ev {
-    String(v) => if match_path(&path) {
-      let value = serde_json::Value::String(v.into());
-      tx.send(Event::Value(value))
-    } else {
-      // just send the path
-      package!(tx,0,path)
-    }
-    Number(v) => if match_path(&path) {
-      let value : serde_json::Number = match serde_json::from_str(v) {
-          Ok(n) => n,
-          Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
-      };
-      tx.send(Event::Value(serde_json::Value::Number(value)))
-    } else {
-      // just send the path
-      package!(tx,0,path)
-    }
-    Boolean(v) => if match_path(&path) {
-      tx.send(Event::Value(serde_json::Value::Bool(v)))
-    } else {
-      // just send the path
-      package!(tx,0,path)
-    },
-    Null => if match_path(&path) {
-      tx.send(Event::Value(serde_json::Value::Null))
-    } else {
-      // just send the path
-      package!(tx,0,path)
-    },
-    _ => todo!(),
+struct Plain;
+
+impl Handler for Plain {
+  fn match_path(&self, _path : &JsonPath) -> bool {
+    true
   }
 }
 
-fn yield_values<Snd : Sender<Event>>(jev : &mut JsonEvents, parents : Parents, depth : u64, match_path : fn(&JsonPath) -> bool, tx : &Snd )
--> Result<(),Snd::SendError> {
-  let mut buf : Vec<u8> = vec![];
-  // json has exactly one top-level object
-  if let Some(ev) = jev.next_buf(&mut buf) {
+struct Valuer(fn(&JsonPath) -> bool);
+
+impl Handler for Valuer {
+  fn match_path(&self, path: &JsonPath) -> bool {
+    self.0(path)
+  }
+
+  fn maybe_send_value<Snd : Sender<Event>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &Snd)
+  -> Result<(),Snd::SendError> {
     use json_event_parser::JsonEvent::*;
     match ev {
-      // ok we have a leaf, so display the path
-      String(_) | Number(_)  | Boolean(_) | Null => maybe_send_value(&parents, &ev, match_path, tx),
-
-      StartArray => count_array(jev, parents, depth+1, tx),
-      EndArray => panic!("should never receive EndArray {}", path_to_string(&parents)),
-
-      StartObject => handle_object(jev, parents, depth+1, tx),
-      ObjectKey(key) => panic!("should never receive ObjectKey {} {}", key, path_to_string(&parents)),
-      EndObject => panic!("should never receive EndObject {}", path_to_string(&parents)),
-      // fin
-      Eof => tx.send(Event::Finished),
+      String(v) => if self.match_path(&path) {
+        let value = serde_json::Value::String(v.into());
+        let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
+        tx.send(Event::Value(SendPath(path),value))
+      } else {
+        // just send the path
+        package!(tx,0,path)
+      }
+      Number(v) => if self.match_path(&path) {
+        let value : serde_json::Number = match serde_json::from_str(v) {
+            Ok(n) => n,
+            Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
+        };
+        let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
+        tx.send(Event::Value(SendPath(path), serde_json::Value::Number(value)))
+      } else {
+        // just send the path
+        package!(tx,0,path)
+      }
+      Boolean(v) => if self.match_path(&path) {
+        let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
+        tx.send(Event::Value(SendPath(path), serde_json::Value::Bool(v)))
+      } else {
+        // just send the path
+        package!(tx,0,path)
+      },
+      Null => if self.match_path(&path) {
+        let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
+        tx.send(Event::Value(SendPath(path), serde_json::Value::Null))
+      } else {
+        // just send the path
+        package!(tx,0,path)
+      },
+      _ => todo!(),
     }
-  } else {
-    tx.send(Event::Finished)
   }
-}
-
-#[allow(dead_code)]
-fn append_step(steps : &Vec<Step>, last : Step) -> Vec<Step> {
-  let mut more_steps = steps.clone();
-  more_steps.push(last);
-  more_steps
 }
 
 fn main() {
