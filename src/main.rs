@@ -151,7 +151,7 @@ impl From<u64> for Step {
 
 // https://docs.rs/rpds/latest/rpds/list/struct.List.html
 // type Parents = rpds::List<Step, archery::ArcK>;
-type Parents = rpds::List<Step>;
+type Parents = rpds::Vector<Step>;
 // type Parents = rpds::List<Step>;
 type JsonPath = Parents;
 
@@ -239,16 +239,15 @@ struct SendPath(Vec<Step>);
 
 impl SendPath {
   fn from(path_list : &JsonPath) -> Self {
-    let mut backward_steps = path_list.iter().map(std::clone::Clone::clone).collect::<Vec<Step>>();
-    backward_steps.reverse();
-    Self(backward_steps)
+    let steps = path_list.iter().map(std::clone::Clone::clone).collect::<Vec<Step>>();
+    // steps.reverse(); for list
+    Self(steps)
   }
 }
 
 impl std::fmt::Display for SendPath {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let string_parts = self.0.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
-    // parent_vec.reverse();
     let repr = string_parts.join("/");
 
     write!(f,"{repr}")
@@ -296,20 +295,13 @@ mod fn_snd {
       }
     });
 
-    let match_path = |path_list : &JsonPath| {
-      if path_list.len() < 3 {
-        let path = super::SendPath::from(path_list);
-        println!("{path}");
-        true
-      } else {
-        false
+    let match_path = |json_path : &JsonPath| {
+      println!("{json_path}");
+      match json_path.first() {
+        Some(super::Step::Key(v)) => &v[..] == "images",
+        Some(super::Step::Index(_n)) => false,
+        None => false,
       }
-      // println!("first: {:?}", path.first());
-      // match path.first() {
-      //   Some(super::Step::Key(v)) => &v[..] == "images",
-      //   Some(super::Step::Index(_n)) => false,
-      //   None => false,
-      // }
     };
 
     use super::Handler;
@@ -415,7 +407,7 @@ trait Handler {
     let mut index = 0;
     let mut buf : Vec<u8> = vec![];
     while let Some(ev) = jev.next_buf(&mut buf) {
-      let loop_parents = parents.push_front(index.into());
+      let loop_parents = parents.push_back(index.into());
       use json_event_parser::JsonEvent::*;
       let res = match ev {
         // ok we have a leaf, so display the path
@@ -452,7 +444,7 @@ trait Handler {
         EndArray => panic!("should never receive EndArray {parents}"),
 
         StartObject => self.find_path(jev, parents.clone(), depth+1, tx),
-        ObjectKey(key) => self.find_path(jev, parents.push_front(key.into()), depth+1, tx),
+        ObjectKey(key) => self.find_path(jev, parents.push_back(key.into()), depth+1, tx),
         EndObject => return Ok(()),
 
         // fin
