@@ -364,7 +364,7 @@ fn count_array<Snd : Sender<Event>>(jev : &mut JsonEvents, parents : Parents, de
       Null => package!(tx,depth,loop_parents),
 
       StartArray => count_array(jev, loop_parents, depth+1, tx),
-      EndArray => return package!(tx,depth,loop_parents),
+      EndArray => return Ok(()), // do not send path, this is +1 past the end of the array
       // ObjectKey(key) => find_path(jev, loop_parents.push_front(key.into()), depth+1, tx),
       StartObject => handle_object(jev, loop_parents, depth+1, tx),
       ObjectKey(_) => panic!("should never receive ObjectKey in count_array {}", path_to_string(&parents)),
