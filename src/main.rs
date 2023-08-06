@@ -18,7 +18,7 @@ fn make_readable() -> StrCon<dyn std::io::BufRead> {
 }
 
 
-struct JsonEvents {
+pub struct JsonEvents {
   // reader : json_event_parser::JsonReader<Box<dyn std::io::BufRead>>,
   reader : json_event_parser::JsonReader<Box<countio::Counter<Box<dyn std::io::BufRead>>>>,
   // counter : &'a Box<countio::Counter<Box<dyn std::io::BufRead>>>,
@@ -233,13 +233,95 @@ fn path_to_string( path : & Parents ) -> String {
   parent_vec.join("/")
 }
 
-// type Snd = std::sync::mpsc::Sender<Option<JsonPath>>;
+trait Sender<T> {
+  type SendError;
+  fn send(&self, t: T) -> Result<(), Self::SendError>;
+}
+
+#[allow(unused_variables)]
+mod fn_snd {
+  pub struct FnSnd<T> {_mrk : std::marker::PhantomData<T>}
+
+  #[derive(Debug)]
+  pub enum SendError<T> {Closed(T)}
+
+  impl<T> super::Sender<T> for FnSnd<T> {
+    type SendError = SendError<T>;
+
+    fn send(&self, t: T) -> Result<(), SendError<T>> {
+      todo!("do something useful with the received Ts")
+    }
+  }
+
+  use crate::JsonEvents;
+  use super::find_path;
+  use super::JsonPath;
+  use super::Event;
+
+  pub fn event_loop(jev : &mut JsonEvents) {
+    let handler = FnSnd{_mrk : std::marker::PhantomData};
+
+    match find_path::<FnSnd<Event>>(jev, JsonPath::new(), 0, &handler ) {
+      Ok(()) => (),
+      Err(err) => { eprintln!("ending event reading {err:?}") },
+    }
+  }
+}
+
 type SendPath = Vec<Step>;
 type Event = Option<(u64,SendPath)>;
-type Snd = std::sync::mpsc::SyncSender<Event>;
-type SndResult = Result<(), std::sync::mpsc::SendError<Event>>;
+
+mod ch_snd {
+  use super::find_path;
+  use super::JsonPath;
+  use super::Event;
+
+  pub type SendError<T> = std::sync::mpsc::SendError<T>;
+  pub type SendResult<T> = Result<(), SendError<T>>;
+  pub struct ChSender<T>(std::sync::mpsc::SyncSender<T>);
+
+  impl<T> super::Sender<T> for ChSender<T> {
+    type SendError=std::sync::mpsc::SendError<T>;
+
+    fn send(&self, t : T) -> SendResult<T> {
+      self.0.send(t)
+    }
+  }
+
+  pub fn channels(jev : &mut super::JsonEvents) {
+    // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(4096);
+    // this seems to be about optimal wrt performance
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(8192);
+    // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(16384);
+    // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(32768);
+
+    // consumer thread
+    std::thread::spawn(move || {
+      loop {
+        match rx.recv() {
+          Ok(Some((depth,path))) => {
+            println!("{depth}:{}", path.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("/"))
+          },
+          Ok(None) => break,
+          Err(err) => { eprintln!("ending consumer: {err}"); break },
+        }
+      }
+    });
+
+    // wrap tx in a thing that implements Sender
+    let tx = ChSender(tx);
+    // producer loop pass the event source (jev) to the
+    loop {
+      match find_path::<ChSender<Event>>(jev, JsonPath::new(), 0, &tx ) {
+        Ok(()) => (),
+        Err(err) => { eprintln!("ending producer {err}"); break },
+      }
+    }
+  }
+}
 
 // for sending the same Path representation over the channel as the one that's constructed
+#[allow(unused_macros)]
 macro_rules! package_same {
   ($tx:ident,$depth:ident,&$parents:expr) => {
     $tx.send( Some(($depth,$parents.clone())) )
@@ -260,7 +342,7 @@ macro_rules! package {
   };
 }
 
-fn count_array(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
+fn count_array<Snd : Sender<Event>>(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
   let mut index = 0;
   let mut buf : Vec<u8> = vec![];
   while let Some(ev) = jev.next_buf(&mut buf) {
@@ -289,7 +371,7 @@ fn count_array(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd 
   Ok(())
 }
 
-fn handle_object(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
+fn handle_object<Snd : Sender<Event>>(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
   let mut buf : Vec<u8> = vec![];
   use json_event_parser::JsonEvent::*;
   while let Some(ev) = jev.next_buf(&mut buf) {
@@ -316,7 +398,7 @@ fn handle_object(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Sn
   Ok(())
 }
 
-fn find_path(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> SndResult {
+fn find_path<Snd : Sender<Event>>(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
   let mut buf : Vec<u8> = vec![];
   use json_event_parser::JsonEvent::*;
   if let Some(ev) = jev.next_buf(&mut buf) {
@@ -340,44 +422,15 @@ fn find_path(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) 
   }
 }
 
+#[allow(dead_code)]
 fn append_step(steps : &Vec<Step>, last : Step) -> Vec<Step> {
   let mut more_steps = steps.clone();
   more_steps.push(last);
   more_steps
 }
 
-fn channels(jev : &mut JsonEvents) {
-  // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(4096);
-  // this seems to be about optimal wrt performance
-  let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(8192);
-  // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(16384);
-  // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(32768);
-
-  // consumer thread
-  std::thread::spawn(move || {
-    loop {
-      match rx.recv() {
-        Ok(Some((depth,path))) => {
-          println!("{depth}:{}", path.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("/"))
-        },
-        Ok(None) => break,
-        Err(err) => { eprintln!("ending consumer: {err}"); break },
-      }
-    }
-  });
-
-  // producer loop pass the event source (jev) to the
-  // parsers, then
-  loop {
-    match find_path(jev, JsonPath::new(), 0, &tx) {
-      Ok(()) => (),
-      Err(err) => { eprintln!("ending producer {err}"); break },
-    }
-  }
-}
-
 fn main() {
   let istream = make_readable();
   let mut jev = JsonEvents::new(istream);
-  channels(&mut jev);
+  ch_snd::channels(&mut jev);
 }
