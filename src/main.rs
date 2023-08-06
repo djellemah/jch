@@ -238,28 +238,37 @@ trait Sender<T> {
   fn send(&self, t: T) -> Result<(), Self::SendError>;
 }
 
+// This is a lot of machinery just to call a function :-\
 #[allow(unused_variables)]
 mod fn_snd {
-  pub struct FnSnd<T> {_mrk : std::marker::PhantomData<T>}
+  pub struct FnSnd<T>(fn(T) -> ());
 
+  // This is identical to std::sync::mpsc::SendError
   #[derive(Debug)]
-  pub enum SendError<T> {Closed(T)}
+  pub struct SendError<T>(pub T);
 
   impl<T> super::Sender<T> for FnSnd<T> {
     type SendError = SendError<T>;
 
     fn send(&self, t: T) -> Result<(), SendError<T>> {
-      todo!("do something useful with the received Ts")
+      Ok(self.0(t))
     }
   }
 
-  use crate::JsonEvents;
+  use super::JsonEvents;
   use super::find_path;
   use super::JsonPath;
   use super::Event;
 
   pub fn event_loop(jev : &mut JsonEvents) {
-    let handler = FnSnd{_mrk : std::marker::PhantomData};
+    let handler = FnSnd(|t : Event| {
+      match t {
+        Some((depth,path)) => {
+          println!("{depth}:{}", path.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("/"))
+        },
+        None => (),
+      }
+    });
 
     match find_path::<FnSnd<Event>>(jev, JsonPath::new(), 0, &handler ) {
       Ok(()) => (),
@@ -373,8 +382,8 @@ fn count_array<Snd : Sender<Event>>(jev : &mut JsonEvents, parents : Parents, de
 
 fn handle_object<Snd : Sender<Event>>(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
   let mut buf : Vec<u8> = vec![];
-  use json_event_parser::JsonEvent::*;
   while let Some(ev) = jev.next_buf(&mut buf) {
+    use json_event_parser::JsonEvent::*;
     let res = match ev {
       // ok we have a leaf, so display the path
       String(_) => package!(tx,depth,&parents),
@@ -400,8 +409,9 @@ fn handle_object<Snd : Sender<Event>>(jev : &mut JsonEvents, parents : Parents, 
 
 fn find_path<Snd : Sender<Event>>(jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
   let mut buf : Vec<u8> = vec![];
-  use json_event_parser::JsonEvent::*;
+  // json has exactly one top-level object
   if let Some(ev) = jev.next_buf(&mut buf) {
+    use json_event_parser::JsonEvent::*;
     match ev {
       // ok we have a leaf, so display the path
       String(_) => package!(tx,depth,parents),
@@ -432,5 +442,6 @@ fn append_step(steps : &Vec<Step>, last : Step) -> Vec<Step> {
 fn main() {
   let istream = make_readable();
   let mut jev = JsonEvents::new(istream);
-  ch_snd::channels(&mut jev);
+  // ch_snd::channels(&mut jev);
+  fn_snd::event_loop(&mut jev);
 }
