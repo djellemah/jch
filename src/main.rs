@@ -36,6 +36,7 @@ impl JsonEvents {
   }
 
   // it's a severe PITA to specify this as an implementation of Iterator
+  // TODO move error handling into next_buf
   fn next(&mut self) -> Option<json_event_parser::JsonEvent> {
     match self.reader.read_event(&mut self.buf) {
       Ok(ev) => match ev {
@@ -72,49 +73,6 @@ impl JsonEvents {
   }
 }
 
-// json_event_parser::JsonEvent::String(_) => todo!(),
-// json_event_parser::JsonEvent::Number(_) => todo!(),
-// json_event_parser::JsonEvent::Boolean(_) => todo!(),
-// json_event_parser::JsonEvent::Null => todo!(),
-// json_event_parser::JsonEvent::StartArray => todo!(),
-// json_event_parser::JsonEvent::EndArray => todo!(),
-// json_event_parser::JsonEvent::StartObject => todo!(),
-// json_event_parser::JsonEvent::EndObject => todo!(),
-// json_event_parser::JsonEvent::ObjectKey(_) => todo!(),
-// json_event_parser::JsonEvent::Eof => todo!(),
-
-use json_event_parser::JsonEvent;
-
-#[allow(dead_code)]
-fn show_all(jev : &mut JsonEvents) {
-  while let Some(ev) = jev.next() {
-    println!("{ev:?}");
-  }
-}
-
-#[allow(dead_code)]
-fn is_object(jev : &mut JsonEvents) -> bool {
-  while let Some(ev) = jev.next() {
-    match ev {
-      JsonEvent::StartObject => return true,
-      _ => return false,
-    }
-  }
-  false
-}
-
-// This is basically xpath or jql in disguise
-#[allow(dead_code)]
-fn ignore(jev : &mut JsonEvents) {
-  while let Some(ev) = jev.next() {
-    match ev {
-      JsonEvent::StartObject => ignore(jev),
-      JsonEvent::EndObject => return,
-      _ => (),
-    }
-  }
-}
-
 #[derive(Debug,Clone)]
 enum Step {
   Key(String),
@@ -135,7 +93,16 @@ impl std::fmt::Display for Step {
   fn fmt(&self, f : &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     match &self {
       Step::Key(v) => write!(f, "{v}"),
-      Step::Index(v) => write!(f, "[{v}]"),
+      Step::Index(v) => write!(f, "{v}"),
+    }
+  }
+}
+
+impl std::fmt::Octal for Step {
+  fn fmt(&self, f : &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+    match &self {
+      Step::Key(v) => write!(f, "\"{v}\""),
+      Step::Index(v) => write!(f, "{v}"),
     }
   }
 }
@@ -155,104 +122,61 @@ type Parents = rpds::Vector<Step>;
 // type Parents = rpds::List<Step>;
 type JsonPath = Parents;
 
-#[allow(dead_code)]
-fn append_step(steps : &Vec<Step>, last : Step) -> Vec<Step> {
-  let mut more_steps = steps.clone();
-  more_steps.push(last);
-  more_steps
-}
+mod jsonpath {
+  use super::JsonPath;
 
-fn make_indent(parents : &Parents) -> String {
-  let mut indent = String::new();
-  for _ in parents { indent.push(' ') };
-  indent
-}
+  #[derive(Debug)]
+  pub struct SendPath(JsonPath);
 
-fn collect_keys(jev : &mut JsonEvents, parents : &Parents) {
-  let mut map : std::collections::BTreeMap<String, serde_json::Value> = std::collections::BTreeMap::new();
+  impl From<&JsonPath> for SendPath {
+    fn from(jsonpath : &JsonPath) -> Self {
+      Self(jsonpath.clone())
+    }
+  }
 
-  // eurgh. This is a rather unpleasant pattern
-  let mut buf : Vec<u8> = vec![];
-  if let Some(ev) = jev.next_buf(&mut buf) {
-    match ev {
-      JsonEvent::ObjectKey(key) => {
-        map.insert(key.to_string(), collect_value(jev, key, &parents));
-        collect_keys(jev, parents);
-      }
-      JsonEvent::Null => todo!(),
-      JsonEvent::StartArray => todo!(),
-      JsonEvent::EndArray => todo!(),
-      JsonEvent::StartObject => todo!(),
-      JsonEvent::EndObject => todo!(),
-      other => panic!("unhandled {other:?}"),
+  // This produces jq-equivalent notation
+  impl std::fmt::Octal for SendPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+      let string_parts = self.0.iter().map(|step| format!("{step:o}")).collect::<Vec<String>>();
+      let repr = string_parts.join(",");
+      write!(f,"[{repr}]")
+    }
+  }
+
+  impl std::fmt::Display for SendPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      let string_parts = self.0.iter().map(ToString::to_string).collect::<Vec<String>>();
+      let repr = string_parts.join("/");
+
+      write!(f,"{repr}")
     }
   }
 }
 
-fn collect_value(jev : &mut JsonEvents, key : &str, parents : &Parents) -> serde_json::Value {
-  let indent = make_indent(parents);
-  if let Some(ev) = jev.next() {
-    match ev {
-      JsonEvent::String(val) => {
-        println!("{indent}{key}: {val}");
-        serde_json::Value::String(val.to_string())
-      }
-      JsonEvent::Number(val) => {
-        println!("{indent}{key}");
-        serde_json::Value::String(val.to_string())
-        // serde_json::Value::Number(val.parse::<i64>().unwrap_or(serde_json::Value::Null))
-      }
-      _ => serde_json::Value::Null,
+mod sendpath {
+  use super::JsonPath;
+  use super::Step;
+
+  struct SendPath(Vec<Step>);
+  impl From<&JsonPath> for SendPath {
+    fn from(path_list : &JsonPath) -> Self {
+      let steps = path_list.iter().map(std::clone::Clone::clone).collect::<Vec<Step>>();
+      // steps.reverse(); for list
+      Self(steps)
     }
-  } else {
-    serde_json::Value::Null
   }
-}
 
-#[allow(dead_code)]
-fn display_keys(jev : &mut JsonEvents, parents : &Parents) {
-  let mut indent = String::new();
-  for _ in parents { indent.push(' ') };
-  let mut map : std::collections::BTreeMap<String, Option<serde_json::Value>> = std::collections::BTreeMap::new();
+  impl std::fmt::Display for SendPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      let string_parts = self.0.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
+      let repr = string_parts.join("/");
 
-  let mut buf : Vec<u8> = vec![];
-  while let Some(ev) = jev.next_buf(&mut buf) {
-    match ev {
-      JsonEvent::StartObject => {
-        println!("---");
-        // display_keys(jev, &parents)
-        collect_keys(jev, &parents)
-      }
-      JsonEvent::EndObject => return,
-      JsonEvent::ObjectKey(key) => {
-        println!("{indent}{key}");
-        map.insert(key.to_string(), None);
-      }
-      JsonEvent::Eof => panic!("unexpected eof"),
-      _ => (),
+      write!(f,"{repr}")
     }
   }
 }
 
-#[derive(Debug)]
-struct SendPath(Vec<Step>);
-
-impl SendPath {
-  fn from(path_list : &JsonPath) -> Self {
-    let steps = path_list.iter().map(std::clone::Clone::clone).collect::<Vec<Step>>();
-    // steps.reverse(); for list
-    Self(steps)
-  }
-}
-
-impl std::fmt::Display for SendPath {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let string_parts = self.0.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
-    let repr = string_parts.join("/");
-
-    write!(f,"{repr}")
-  }
-}
+type SendPath = jsonpath::SendPath;
 
 #[derive(Debug)]
 enum Event {
@@ -286,23 +210,27 @@ mod fn_snd {
   use super::JsonPath;
   use super::Event;
 
-  pub fn event_loop(jev : &mut JsonEvents) {
+  #[allow(dead_code)]
+  pub fn values(jev : &mut JsonEvents) {
+    // return true if handler should be called for this path
+    let match_path = |_json_path : &JsonPath| {
+      true
+      // match json_path.first() {
+      //   Some(super::Step::Key(v)) => &v[..] == "annotations",
+      //   Some(super::Step::Index(_n)) => false,
+      //   None => false,
+      // }
+    };
+
+    // call handler with specified paths
     let handler = FnSnd(|t : Event| {
       match t {
-        Event::Path(_depth,_path) => (), //println!("{depth},{path}"),
-        Event::Value(p,v) => println!("{p} => {v}"),
+        // Event::Path(_depth,_path) => (),
+        Event::Path(depth,path) => println!("{depth},{path}"),
+        Event::Value(p,v) => println!("[{p:#o},{v}]"),
         Event::Finished => (),
       }
     });
-
-    let match_path = |json_path : &JsonPath| {
-      println!("{json_path}");
-      match json_path.first() {
-        Some(super::Step::Key(v)) => &v[..] == "images",
-        Some(super::Step::Index(_n)) => false,
-        None => false,
-      }
-    };
 
     use super::Handler;
     let visitor = super::Valuer(match_path);
@@ -311,54 +239,22 @@ mod fn_snd {
       Err(err) => { eprintln!("ending event reading {err:?}") },
     }
   }
-}
 
-mod ch_snd {
-  use super::JsonPath;
-  use super::Event;
-
-  pub type SendError<T> = std::sync::mpsc::SendError<T>;
-  pub type SendResult<T> = Result<(), SendError<T>>;
-  pub struct ChSender<T>(std::sync::mpsc::SyncSender<T>);
-
-  impl<T> super::Sender<T> for ChSender<T> {
-    type SendError=std::sync::mpsc::SendError<T>;
-
-    fn send(&self, t : T) -> SendResult<T> {
-      self.0.send(t)
-    }
-  }
-
-  #[allow(dead_code)]
-  pub fn channels(jev : &mut super::JsonEvents) {
-    // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(4096);
-    // this seems to be about optimal wrt performance
-    let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(8192);
-    // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(16384);
-    // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(32768);
-
-    // consumer thread
-    std::thread::spawn(move || {
-      loop {
-        match rx.recv() {
-          Ok(Event::Path(depth,path)) => println!("{depth}:{}", path),
-          Ok(Event::Finished) => break,
-          Ok(Event::Value(p,v)) => println!("{p} => {v}"),
-          Err(err) => { eprintln!("ending consumer: {err}"); break },
-        }
+  pub fn paths(jev : &mut JsonEvents) {
+    // call handler with specified paths
+    let handler = FnSnd(|t : Event| {
+      match t {
+        Event::Path(depth,path) => println!("{depth},{path}"),
+        Event::Value(p,v) => println!("{p} => {v}"),
+        Event::Finished => (),
       }
     });
 
-    // wrap tx in a thing that implements Sender
-    let tx = ChSender(tx);
     use super::Handler;
     let visitor = super::Plain;
-    // producer loop pass the event source (jev) to the
-    loop {
-      match visitor.find_path::<ChSender<Event>>(jev, JsonPath::new(), 0, &tx ) {
-        Ok(()) => (),
-        Err(err) => { eprintln!("ending producer {err}"); break },
-      }
+    match visitor.find_path::<FnSnd<Event>>(jev, JsonPath::new(), 0, &handler ) {
+      Ok(()) => (),
+      Err(err) => { eprintln!("ending event reading {err:?}") },
     }
   }
 }
@@ -378,30 +274,27 @@ macro_rules! package_same {
 macro_rules! package {
   // see previous to distinguish where clone() is needed
   ($tx:ident,0,&$parents:expr) => {
-    $tx.send( Event::Path( 0, $parents.iter().map(|s| s.clone()).collect::<Vec<Step>>() ) )
+    $tx.send( Event::Path(0, SendPath::from($parents)) )
   };
   ($tx:ident,0,$parents:expr) => {
-    $tx.send( Event::Path( 0, SendPath($parents.iter().map(|s| s.clone()).collect::<Vec<Step>>())) )
+    $tx.send( Event::Path(0, SendPath::from($parents)) )
   };
   ($tx:ident,$depth:ident,&$parents:expr) => {
-    $tx.send( Event::Path( $depth, $parents.iter().map(|s| s.clone()).collect::<Vec<Step>>() ) )
+    $tx.send( Event::Path(0, SendPath::from($parents)) )
   };
   ($tx:ident,$depth:ident,$parents:expr) => {
-    $tx.send( Event::Path($depth, $parents.iter().map(|s| s.clone()).collect::<Vec<Step>>() ))
+    $tx.send( Event::Path(0, SendPath::from($parents)) )
   };
 }
 
 // This really just becomes a place to hang match_path and maybe_send_value without threading
 // those functions through the JsonEvent handlers.
 trait Handler {
-  // fn match_path : fn(&JsonPath) -> bool;
   fn match_path(&self, path : &JsonPath) -> bool;
 
   // default implementation that does nothing and returns OK
   #[allow(unused_variables)]
-  fn maybe_send_value<Snd : Sender<Event>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError> {
-    Ok(())
-  }
+  fn maybe_send_value<Snd : Sender<Event>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError>;
 
   fn count_array<Snd : Sender<Event>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
     let mut index = 0;
@@ -486,8 +379,18 @@ trait Handler {
 struct Plain;
 
 impl Handler for Plain {
+  // default implementation that does nothing and returns OK
+  #[allow(unused_variables)]
+  fn maybe_send_value<Snd : Sender<Event>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError> {
+    println!("{path}");
+    Ok(())
+  }
+
   fn match_path(&self, _path : &JsonPath) -> bool {
-    true
+    println!("{_path}");
+    // ensure all paths are sent
+    // if this was true, maybe_send_values would be called with the value as well.
+    false
   }
 }
 
@@ -504,8 +407,8 @@ impl Handler for Valuer {
     match ev {
       String(v) => if self.match_path(&path) {
         let value = serde_json::Value::String(v.into());
-        let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
-        tx.send(Event::Value(SendPath(path),value))
+        // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
+        tx.send(Event::Value(SendPath::from(path),value))
       } else {
         // just send the path
         package!(tx,0,path)
@@ -515,22 +418,22 @@ impl Handler for Valuer {
             Ok(n) => n,
             Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
-        let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
-        tx.send(Event::Value(SendPath(path), serde_json::Value::Number(value)))
+        // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
+        tx.send(Event::Value(SendPath::from(path), serde_json::Value::Number(value)))
       } else {
         // just send the path
         package!(tx,0,path)
       }
       Boolean(v) => if self.match_path(&path) {
-        let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
-        tx.send(Event::Value(SendPath(path), serde_json::Value::Bool(v)))
+        // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
+        tx.send(Event::Value(SendPath::from(path), serde_json::Value::Bool(v)))
       } else {
         // just send the path
         package!(tx,0,path)
       },
       Null => if self.match_path(&path) {
-        let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
-        tx.send(Event::Value(SendPath(path), serde_json::Value::Null))
+        // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
+        tx.send(Event::Value(SendPath::from(path), serde_json::Value::Null))
       } else {
         // just send the path
         package!(tx,0,path)
@@ -544,5 +447,5 @@ fn main() {
   let istream = make_readable();
   let mut jev = JsonEvents::new(istream);
   // ch_snd::channels(&mut jev);
-  fn_snd::event_loop(&mut jev);
+  fn_snd::values(&mut jev);
 }
