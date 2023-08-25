@@ -17,3 +17,5 @@ serde_json = "*"
 rpds = { version = "*", features = ["serde"] }
 archery = "*"
 serde_yaml = "*"
+rmp-serde = "*"
+rmp = "*"

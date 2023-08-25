@@ -22,7 +22,7 @@ pub struct JsonEvents {
   // reader : json_event_parser::JsonReader<Box<dyn std::io::BufRead>>,
   reader : json_event_parser::JsonReader<Box<countio::Counter<Box<dyn std::io::BufRead>>>>,
   // counter : &'a Box<countio::Counter<Box<dyn std::io::BufRead>>>,
-  buf : Vec<u8>,
+  _buf : Vec<u8>,
 }
 
 impl JsonEvents {
@@ -32,13 +32,14 @@ impl JsonEvents {
     let reader = json_event_parser::JsonReader::from_reader(counter);
     let buf : Vec<u8> = vec![];
     // Self{reader, counter: rcounter, buf}
-    Self{reader, buf}
+    Self{reader, _buf: buf}
   }
 
   // it's a severe PITA to specify this as an implementation of Iterator
   // TODO move error handling into next_buf
+  #[allow(dead_code)]
   fn next(&mut self) -> Option<json_event_parser::JsonEvent> {
-    match self.reader.read_event(&mut self.buf) {
+    match self.reader.read_event(&mut self._buf) {
       Ok(ev) => match ev {
         json_event_parser::JsonEvent::Eof => None,
         event => Some(event),
@@ -74,7 +75,7 @@ impl JsonEvents {
 }
 
 #[derive(Debug,Clone)]
-enum Step {
+pub enum Step {
   Key(String),
   Index(u64),
 }
@@ -179,84 +180,15 @@ mod sendpath {
 type SendPath = jsonpath::SendPath;
 
 #[derive(Debug)]
-enum Event {
+enum Event<V> {
   Path(u64,SendPath),
-  Value(SendPath,serde_json::Value),
+  Value(SendPath,V),
   Finished,
 }
 
 trait Sender<T> {
   type SendError;
   fn send(&self, t: T) -> Result<(), Self::SendError>;
-}
-
-// This is a lot of machinery just to call a function :-\
-mod fn_snd {
-  pub struct FnSnd<T>(fn(T) -> ());
-
-  // This is identical to std::sync::mpsc::SendError
-  #[derive(Debug)]
-  pub struct SendError<T>(pub T);
-
-  impl<T> super::Sender<T> for FnSnd<T> {
-    type SendError = SendError<T>;
-
-    fn send(&self, t: T) -> Result<(), SendError<T>> {
-      Ok(self.0(t))
-    }
-  }
-
-  use super::JsonEvents;
-  use super::JsonPath;
-  use super::Event;
-
-  #[allow(dead_code)]
-  pub fn values(jev : &mut JsonEvents) {
-    // return true if handler should be called for this path
-    let match_path = |_json_path : &JsonPath| {
-      true
-      // match json_path.first() {
-      //   Some(super::Step::Key(v)) => &v[..] == "annotations",
-      //   Some(super::Step::Index(_n)) => false,
-      //   None => false,
-      // }
-    };
-
-    // call handler with specified paths
-    let handler = FnSnd(|t : Event| {
-      match t {
-        // Event::Path(_depth,_path) => (),
-        Event::Path(depth,path) => println!("{depth},{path}"),
-        Event::Value(p,v) => println!("[{p:#o},{v}]"),
-        Event::Finished => (),
-      }
-    });
-
-    use super::Handler;
-    let visitor = super::Valuer(match_path);
-    match visitor.find_path::<FnSnd<Event>>(jev, JsonPath::new(), 0, &handler ) {
-      Ok(()) => (),
-      Err(err) => { eprintln!("ending event reading {err:?}") },
-    }
-  }
-
-  pub fn paths(jev : &mut JsonEvents) {
-    // call handler with specified paths
-    let handler = FnSnd(|t : Event| {
-      match t {
-        Event::Path(depth,path) => println!("{depth},{path}"),
-        Event::Value(p,v) => println!("{p} => {v}"),
-        Event::Finished => (),
-      }
-    });
-
-    use super::Handler;
-    let visitor = super::Plain;
-    match visitor.find_path::<FnSnd<Event>>(jev, JsonPath::new(), 0, &handler ) {
-      Ok(()) => (),
-      Err(err) => { eprintln!("ending event reading {err:?}") },
-    }
-  }
 }
 
 // for sending the same Path representation over the channel as the one that's constructed
@@ -290,27 +222,29 @@ macro_rules! package {
 // This really just becomes a place to hang match_path and maybe_send_value without threading
 // those functions through the JsonEvent handlers.
 trait Handler {
+  type V;
+
   fn match_path(&self, path : &JsonPath) -> bool;
 
   // default implementation that does nothing and returns OK
   #[allow(unused_variables)]
-  fn maybe_send_value<Snd : Sender<Event>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError>;
+  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError>;
 
-  fn count_array<Snd : Sender<Event>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
+  fn array<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
     let mut index = 0;
     let mut buf : Vec<u8> = vec![];
     while let Some(ev) = jev.next_buf(&mut buf) {
       let loop_parents = parents.push_back(index.into());
       use json_event_parser::JsonEvent::*;
       let res = match ev {
-        // ok we have a leaf, so display the path
+        // ok we have a leaf, so match path then send value
         String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
-        StartArray => self.count_array(jev, loop_parents, depth+1, tx),
+        StartArray => self.array(jev, loop_parents, depth+1, tx),
         EndArray => return Ok(()), // do not send path, this is +1 past the end of the array
 
         // ObjectKey(key) => find_path(jev, loop_parents.push_front(key.into()), depth+1, tx),
-        StartObject => self.handle_object(jev, loop_parents, depth+1, tx),
+        StartObject => self.object(jev, loop_parents, depth+1, tx),
         ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
         EndObject => panic!("should never receive EndObject {parents}"),
 
@@ -325,7 +259,7 @@ trait Handler {
     Ok(())
   }
 
-  fn handle_object<Snd : Sender<Event>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
+  fn object<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
     let mut buf : Vec<u8> = vec![];
     while let Some(ev) = jev.next_buf(&mut buf) {
       use json_event_parser::JsonEvent::*;
@@ -333,11 +267,11 @@ trait Handler {
         // ok we have a leaf, so display the path
         String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
-        StartArray => self.count_array(jev, parents.clone(), depth+1, tx),
+        StartArray => self.array(jev, parents.clone(), depth+1, tx),
         EndArray => panic!("should never receive EndArray {parents}"),
 
-        StartObject => self.find_path(jev, parents.clone(), depth+1, tx),
-        ObjectKey(key) => self.find_path(jev, parents.push_back(key.into()), depth+1, tx),
+        StartObject => self.value(jev, parents.clone(), depth+1, tx),
+        ObjectKey(key) => self.value(jev, parents.push_back(key.into()), depth+1, tx),
         EndObject => return Ok(()),
 
         // fin
@@ -351,7 +285,7 @@ trait Handler {
     Ok(())
   }
 
-  fn find_path<Snd : Sender<Event>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
+  fn value<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
     let mut buf : Vec<u8> = vec![];
     // json has exactly one top-level object
     if let Some(ev) = jev.next_buf(&mut buf) {
@@ -360,10 +294,10 @@ trait Handler {
         // ok we have a leaf, so display the path
         String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
-        StartArray => self.count_array(jev, parents, depth+1, tx),
+        StartArray => self.array(jev, parents, depth+1, tx),
         EndArray => panic!("should never receive EndArray {parents}"),
 
-        StartObject => self.handle_object(jev, parents, depth+1, tx),
+        StartObject => self.object(jev, parents, depth+1, tx),
         ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
         EndObject => panic!("should never receive EndObject {parents}"),
 
@@ -378,10 +312,13 @@ trait Handler {
 
 struct Plain;
 
-impl Handler for Plain {
+impl Handler for Plain
+{
+  type V = serde_json::Value;
+
   // default implementation that does nothing and returns OK
   #[allow(unused_variables)]
-  fn maybe_send_value<Snd : Sender<Event>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError> {
+  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError> {
     println!("{path}");
     Ok(())
   }
@@ -396,12 +333,15 @@ impl Handler for Plain {
 
 struct Valuer(fn(&JsonPath) -> bool);
 
-impl Handler for Valuer {
+impl Handler for Valuer
+{
+  type V = serde_json::Value;
+
   fn match_path(&self, path: &JsonPath) -> bool {
     self.0(path)
   }
 
-  fn maybe_send_value<Snd : Sender<Event>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &Snd)
+  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &Snd)
   -> Result<(),Snd::SendError> {
     use json_event_parser::JsonEvent::*;
     match ev {
@@ -443,9 +383,203 @@ impl Handler for Valuer {
   }
 }
 
-fn main() {
+struct MsgPacker(fn(&JsonPath) -> bool);
+
+impl Handler for MsgPacker {
+  type V = Vec<u8>;
+
+  fn match_path(&self, path: &JsonPath) -> bool {
+    self.0(path)
+  }
+
+  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &Snd)
+  -> Result<(),Snd::SendError> {
+    use json_event_parser::JsonEvent::*;
+    match ev {
+      String(v) => if self.match_path(&path) {
+        let mut buf = vec![];
+        match rmp::encode::write_str(&mut buf, &v) {
+          Ok(()) => tx.send(Event::Value(SendPath::from(path),buf)),
+          Err(err) => panic!("msgpack error {err}")
+        }
+      } else {
+        // just send the path
+        package!(tx,0,path)
+      }
+      Number(v) => if self.match_path(&path) {
+        let value : serde_json::Number = match serde_json::from_str(v) {
+            Ok(n) => n,
+            Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
+        };
+
+        let mut buf = vec![];
+        match rmp::encode::write_f64(&mut buf, value.as_f64().unwrap()) {
+          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
+          Err(err) => panic!("msgpack error {err}"),
+        }
+      } else {
+        // just send the path
+        package!(tx,0,path)
+      }
+      Boolean(v) => if self.match_path(&path) {
+        let mut buf = vec![];
+        match rmp::encode::write_bool(&mut buf, v) {
+          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
+          Err(err) => panic!("msgpack error {err}"),
+        }
+      } else {
+        // just send the path
+        package!(tx,0,path)
+      },
+      Null => if self.match_path(&path) {
+        let mut buf = vec![];
+        match rmp::encode::write_nil(&mut buf) {
+          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
+          Err(err) => panic!("msgpack error {err}"),
+        }
+      } else {
+        // just send the path
+        package!(tx,0,path)
+      },
+      _ => todo!(),
+    }
+  }
+}
+
+// This is a lot of machinery just to call a function :-\
+mod fn_snd {
+  pub struct FnSnd<T>(pub fn(T) -> ());
+
+  // This is identical to std::sync::mpsc::SendError
+  #[derive(Debug)]
+  pub struct SendError<T>(pub T);
+
+  impl<T> super::Sender<T> for FnSnd<T> {
+    type SendError = SendError<T>;
+
+    fn send(&self, t: T) -> Result<(), SendError<T>> {
+      Ok(self.0(t))
+    }
+  }
+
+  // use super::JsonEvents;
+  // use super::JsonPath;
+  // use super::Event;
+
+  // #[allow(dead_code)]
+  // pub fn values<V>(jev : &mut JsonEvents, match_path : fn(&JsonPath) -> bool)
+  // where V : std::fmt::Display
+  // {
+  //   // call handler with specified paths
+  //   let handler = FnSnd(|t : Event<V>| {
+  //     match t {
+  //       Event::Path(_depth,_path) => (),
+  //       // Event::Path(depth,path) => println!("path: {depth},{path}"),
+  //       Event::Value(p,v) => println!("jq path: [{p:#o},{v}]"),
+  //       Event::Finished => (),
+  //     }
+  //   });
+
+  //   use super::Handler;
+  //   let visitor = super::MsgPacker(match_path);
+  //   match visitor.value(jev, JsonPath::new(), 0, &handler ) {
+  //     Ok(()) => (),
+  //     Err(err) => { eprintln!("ending event reading {err:?}") },
+  //   }
+  // }
+
+  // #[allow(dead_code)]
+  // pub fn paths<DV>(jev : &mut JsonEvents)
+  // where
+  //   DV: std::fmt::Display + std::fmt::Debug, FnSnd<Event<DV>>: crate::Sender<Event<DV>>
+  // {
+  //   // call handler with specified paths
+  //   let handler = FnSnd(|t : Event<DV>| {
+  //     match t {
+  //       Event::Path(depth,path) => println!("{depth},{path}"),
+  //       Event::Value(p,v) => println!("{p} => {v}"),
+  //       Event::Finished => (),
+  //     }
+  //   });
+
+  //   use super::Handler;
+  //   let visitor = super::Plain;
+  //   match visitor.value::<FnSnd<Event<DV>>>(jev, JsonPath::new(), 0, &handler ) {
+  //     Ok(()) => (),
+  //     Err(err) => { eprintln!("ending event reading {err:?}") },
+  //   }
+  // }
+}
+
+#[allow(dead_code, unused_mut, unused_variables)]
+fn show_jq_paths() {
   let istream = make_readable();
   let mut jev = JsonEvents::new(istream);
   // ch_snd::channels(&mut jev);
-  fn_snd::values(&mut jev);
+
+  // return true if handler should be called for this path
+  let match_lp_ps_path = |json_path : &JsonPath| {
+    if json_path.len() < 3 {return false};
+
+    let trefix = json_path
+      .iter()
+      .take(3)
+      .collect::<Vec<&Step>>();
+
+    // This is pretty horrible. Maybe a DSL would be nicer.
+    match &trefix[0..3] {
+      [&Step::Key(ref v), &Step::Index(n), &Step::Key(ref u) ] => {
+        (n == 1 || n == 3) &&
+        &v[..] == "learning_paths" &&
+        &u[..] == "problem_sequence"
+      }
+      _ => false
+    }
+  };
+  // fn_snd::values(&mut jev, match_lp_ps_path);
+
+  // let match_images_path = |json_path : &JsonPath| {
+  //   // This is pretty horrible. Maybe a DSL would be nicer.
+  //   match &json_path[..] {
+  //     [&Step::Key(ref v)] => &v[..] == "images",
+  //     _ => false
+  //   }
+  // };
+}
+
+fn main() {
+  let istream = make_readable();
+  let mut jev = JsonEvents::new(istream);
+
+  // receives events from the streaming parser
+  let handler = |t : Event<Vec<u8>>| {
+    use std::io::Write;
+    match t {
+      Event::Path(_depth,_path) => (),
+      Event::Value(_p,v) =>
+      {
+        std::io::stdout().write_all(&v).unwrap()
+      },
+      Event::Finished => (),
+    }
+  };
+  let handler = fn_snd::FnSnd(handler);
+
+  // filters events from the streaming parser
+  let match_images_path = |json_path : &JsonPath| {
+    // need the &Step ref for nicer matching below
+    let json_path = json_path.iter().collect::<Vec<&Step>>();
+
+    // This is pretty horrible. Maybe a DSL would be nicer.
+    match &json_path[..] {
+      [&Step::Key(ref v), ..] => &v[..] == "images",
+      _ => false
+    }
+  };
+
+  let visitor = MsgPacker(match_images_path);
+  match visitor.value(&mut jev, JsonPath::new(), 0, &handler ) {
+    Ok(()) => (),
+    Err(err) => { eprintln!("ending event reading {err:?}") },
+  }
 }
