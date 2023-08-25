@@ -127,7 +127,7 @@ mod jsonpath {
   use super::JsonPath;
 
   #[derive(Debug)]
-  pub struct SendPath(JsonPath);
+  pub struct SendPath(pub JsonPath);
 
   impl From<&JsonPath> for SendPath {
     fn from(jsonpath : &JsonPath) -> Self {
@@ -383,66 +383,109 @@ impl Handler for Valuer
   }
 }
 
-struct MsgPacker(fn(&JsonPath) -> bool);
+struct MsgPacker{
+  files : std::collections::hash_map::HashMap<String, std::fs::File>
+}
+
+
+impl MsgPacker {
+  fn new() -> Self {
+    Self { files: std::collections::hash_map::HashMap::new() }
+  }
+
+  fn find_or_create<'a>(&'a mut self, filename : &String) -> &'a mut std::fs::File {
+    if self.files.contains_key(filename) {
+      self.files.get_mut(filename).unwrap()
+    } else {
+      let file = std::fs::File::create(format!("{filename}.mpk")).unwrap();
+      self.files.insert(filename.clone(), file).unwrap();
+      self.find_or_create(filename)
+    }
+  }
+
+  // receives events from the streaming parser
+  fn write_msgpack_value(&mut self, _path : &JsonPath, ev : &Event<Vec<u8>>)
+  {
+    match ev {
+      Event::Path(_depth,_path) => (),
+      Event::Value(send_path,v) =>
+      {
+        let jsonpath::SendPath(steps) = send_path;
+        let steps = steps.iter().map(|step| step.to_string()).collect::<Vec<String>>();
+        let filename = steps.join(".");
+        let file = self.find_or_create(&filename);
+        use std::io::Write;
+        file.write_all(v);
+      },
+      Event::Finished => (),
+    }
+  }
+}
+
+impl<T> Sender<T> for MsgPacker {
+  type SendError = ();
+
+  fn send(&self, _t: T) -> Result<(), Self::SendError> {
+    todo!("shuold not need to be implemented. So there's a design error.")
+  }
+}
 
 impl Handler for MsgPacker {
   type V = Vec<u8>;
 
-  fn match_path(&self, path: &JsonPath) -> bool {
-    self.0(path)
+  // filters events from the streaming parser
+  fn match_path(&self, json_path : &JsonPath) -> bool {
+    // need the &Step ref for nicer matching below
+    let json_path = json_path.iter().collect::<Vec<&Step>>();
+
+    // This is pretty horrible. Maybe a DSL would be nicer.
+    match &json_path[..] {
+      // ie images/xxx
+      [&Step::Key(ref v), _] => &v[..] == "images",
+      _ => false
+    }
   }
 
-  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &Snd)
+  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, _ : &Snd)
   -> Result<(),Snd::SendError> {
     use json_event_parser::JsonEvent::*;
     match ev {
       String(v) => if self.match_path(&path) {
         let mut buf = vec![];
         match rmp::encode::write_str(&mut buf, &v) {
-          Ok(()) => tx.send(Event::Value(SendPath::from(path),buf)),
+          Ok(()) => self.write_msgpack_value(&path, &Event::Value(SendPath::from(path),buf)),
           Err(err) => panic!("msgpack error {err}")
         }
-      } else {
-        // just send the path
-        package!(tx,0,path)
       }
       Number(v) => if self.match_path(&path) {
         let value : serde_json::Number = match serde_json::from_str(v) {
-            Ok(n) => n,
-            Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
+          Ok(n) => n,
+          Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
 
         let mut buf = vec![];
         match rmp::encode::write_f64(&mut buf, value.as_f64().unwrap()) {
-          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
+          Ok(()) => self.write_msgpack_value(&path, &Event::Value(SendPath::from(path), buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
-      } else {
-        // just send the path
-        package!(tx,0,path)
       }
       Boolean(v) => if self.match_path(&path) {
         let mut buf = vec![];
         match rmp::encode::write_bool(&mut buf, v) {
-          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
+          Ok(()) => self.write_msgpack_value(&path, &Event::Value(SendPath::from(path), buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
-      } else {
-        // just send the path
-        package!(tx,0,path)
       },
       Null => if self.match_path(&path) {
         let mut buf = vec![];
         match rmp::encode::write_nil(&mut buf) {
-          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
+          Ok(()) => self.write_msgpack_value(&path, &Event::Value(SendPath::from(path), buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
-      } else {
-        // just send the path
-        package!(tx,0,path)
       },
       _ => todo!(),
-    }
+    };
+    Ok(())
   }
 }
 
@@ -551,34 +594,8 @@ fn main() {
   let istream = make_readable();
   let mut jev = JsonEvents::new(istream);
 
-  // receives events from the streaming parser
-  let handler = |t : Event<Vec<u8>>| {
-    use std::io::Write;
-    match t {
-      Event::Path(_depth,_path) => (),
-      Event::Value(_p,v) =>
-      {
-        std::io::stdout().write_all(&v).unwrap()
-      },
-      Event::Finished => (),
-    }
-  };
-  let handler = fn_snd::FnSnd(handler);
-
-  // filters events from the streaming parser
-  let match_images_path = |json_path : &JsonPath| {
-    // need the &Step ref for nicer matching below
-    let json_path = json_path.iter().collect::<Vec<&Step>>();
-
-    // This is pretty horrible. Maybe a DSL would be nicer.
-    match &json_path[..] {
-      [&Step::Key(ref v), ..] => &v[..] == "images",
-      _ => false
-    }
-  };
-
-  let visitor = MsgPacker(match_images_path);
-  match visitor.value(&mut jev, JsonPath::new(), 0, &handler ) {
+  let visitor = MsgPacker::new();
+  match visitor.value(&mut jev, JsonPath::new(), 0, &visitor ) {
     Ok(()) => (),
     Err(err) => { eprintln!("ending event reading {err:?}") },
   }
