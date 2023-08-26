@@ -343,12 +343,17 @@ impl<V> ShredWriter<V>
   // type V = &'a [u8];
   // type V = Vec<u8>;
 
-  fn new(dir : &std::path::Path) -> Self {
+  fn new<S,P>(dir : P, ext : S)
+  -> Self
+  where
+    S : AsRef<str> + std::fmt::Display,
+    P : AsRef<std::path::Path>
+  {
     Self {
-      dir: dir.to_path_buf(),
+      dir: std::path::PathBuf::from(dir.as_ref()),
       files: std::collections::hash_map::HashMap::new(),
-      ext: "mpk".into(),
-      _event_data : std::marker::PhantomData,
+      ext: ext.to_string(),
+      _event_marker : std::marker::PhantomData,
     }
   }
 
