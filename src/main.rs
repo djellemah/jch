@@ -179,6 +179,7 @@ mod sendpath {
 
 type SendPath = jsonpath::SendPath;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum Event<V> {
   Path(u64,SendPath),
@@ -203,6 +204,7 @@ macro_rules! package_same {
 }
 
 // send a different Path representation over the channel.
+#[allow(unused_macros)]
 macro_rules! package {
   // see previous to distinguish where clone() is needed
   ($tx:ident,0,&$parents:expr) => {
@@ -219,16 +221,19 @@ macro_rules! package {
   };
 }
 
-// This really just becomes a place to hang match_path and maybe_send_value without threading
-// those functions through the JsonEvent handlers.
-// Effectively it's a visitor with accept = match_path and visit = maybe_send_value
+// This traverses/handles the incoming json stream events.
+//
+// Rally just becomes a place to hang match_path and maybe_send_value without
+// threading those functions through the JsonEvent handlers. Effectively it's a
+// visitor with accept = match_path and visit = maybe_send_value
 trait Handler {
+  // value contained by Event
+  // type V where Self::V : AsRef<&'a [u8]>;
   type V;
 
   fn match_path(&self, path : &JsonPath) -> bool;
 
   // default implementation that does nothing and returns OK
-  #[allow(unused_variables)]
   fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd) -> Result<(),Snd::SendError>;
 
   fn array<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &mut Snd ) -> Result<(),Snd::SendError> {
