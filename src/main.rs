@@ -189,7 +189,7 @@ enum Event<V> {
 
 trait Sender<T> {
   type SendError;
-  fn send(&mut self, t: &T) -> Result<(), Self::SendError>;
+  fn send<'a>(&mut self, t: &'a T) -> Result<(), Self::SendError>;
 }
 
 // for sending the same Path representation over the channel as the one that's constructed
@@ -228,15 +228,22 @@ macro_rules! package {
 // visitor with accept = match_path and visit = maybe_send_value
 trait Handler {
   // value contained by Event
-  // type V where Self::V : AsRef<&'a [u8]>;
-  type V;
+  // Lifetime bound is so that events are allowed the shortest lifetime possible,
+  // hence the where clauses and higher-ranked for declarations in the below trait methods.
+  type V<'l> where Self: 'l;
 
   fn match_path(&self, path : &JsonPath) -> bool;
 
   // default implementation that does nothing and returns OK
-  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd) -> Result<(),Snd::SendError>;
+  fn maybe_send_value<'l, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
+  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
+  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  ;
 
-  fn array<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &mut Snd ) -> Result<(),Snd::SendError> {
+  fn array<'l, Snd>(&self, jev : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd )
+  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
+  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  {
     let mut index = 0;
     let mut buf : Vec<u8> = vec![];
     while let Some(ev) = jev.next_buf(&mut buf) {
@@ -265,13 +272,15 @@ trait Handler {
     Ok(())
   }
 
-  fn object<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &mut Snd )
-  -> Result<(),Snd::SendError> {
+  fn object<'a, Snd>(&self, jev : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd )
+  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
+  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  {
     let mut buf : Vec<u8> = vec![];
     while let Some(ev) = jev.next_buf(&mut buf) {
       use json_event_parser::JsonEvent::*;
       let res = match ev {
-        // ok we have a leaf, so display the path
+        // ok we have a leaf, so emit the value and path
         String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
         StartArray => self.array(jev, parents.clone(), depth+1, tx),
@@ -292,14 +301,16 @@ trait Handler {
     Ok(())
   }
 
-  fn value<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &mut Snd )
-  -> Result<(),Snd::SendError> {
+  fn value<'a,Snd>(&self, jev : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd)
+  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
+  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  {
     let mut buf : Vec<u8> = vec![];
     // json has exactly one top-level object
     if let Some(ev) = jev.next_buf(&mut buf) {
       use json_event_parser::JsonEvent::*;
       match ev {
-        // ok we have a leaf, so display the path
+        // ok we have a leaf, so emit the value and path
         String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
         StartArray => self.array(jev, parents, depth+1, tx),
@@ -320,16 +331,25 @@ trait Handler {
 
 // write each leaf value to a separate file for its path
 // a la the Shredder algorithm in Dremel paper
-struct ShredWriter {
-  // files : std::cell::RefCell<std::collections::hash_map::HashMap<String, std::fs::File>>
+struct ShredWriter<V> {
   dir : std::path::PathBuf,
   ext : String,
   files : std::collections::hash_map::HashMap<std::path::PathBuf, std::fs::File>,
+  _event_marker : std::marker::PhantomData<V>,
 }
 
-impl ShredWriter {
+impl<V> ShredWriter<V>
+{
+  // type V = &'a [u8];
+  // type V = Vec<u8>;
+
   fn new(dir : &std::path::Path) -> Self {
-    Self { dir: dir.to_path_buf(), files: std::collections::hash_map::HashMap::new(), ext: "mpk".into() }
+    Self {
+      dir: dir.to_path_buf(),
+      files: std::collections::hash_map::HashMap::new(),
+      ext: "mpk".into(),
+      _event_data : std::marker::PhantomData,
+    }
   }
 
   // this converts a path in the form images/23423/image_name
@@ -367,9 +387,12 @@ impl ShredWriter {
       self.find_or_create(send_path)
     }
   }
+}
 
+impl ShredWriter<Vec<u8>>
+{
   // receives events from the streaming parser
-  fn write_msgpack_value(&mut self, ev : &Event<Vec<u8>>)
+  fn write_msgpack_value<'a>(&mut self, ev : &Event<Vec<u8>>)
   {
     match ev {
       Event::Path(_depth,_path) => (),
@@ -377,17 +400,43 @@ impl ShredWriter {
       {
         let mut file = self.find_or_create(send_path);
         use std::io::Write;
-        file.write_all(v).unwrap();
+        file.write_all(&v).unwrap();
       },
       Event::Finished => (),
     }
   }
 }
 
-impl Sender<Event<Vec<u8>>> for ShredWriter {
+impl Sender<Event<Vec<u8>>> for ShredWriter<Vec<u8>> {
   type SendError = ();
 
-  fn send<'a>(&mut self, ev: &Event<Vec<u8>>) -> Result<(), Self::SendError> {
+  fn send<'a>(&mut self, ev: &'a Event<Vec<u8>>) -> Result<(), Self::SendError> {
+    Ok(self.write_msgpack_value(&ev))
+  }
+}
+
+impl ShredWriter<&[u8]>
+{
+  // receives events from the streaming parser
+  fn write_msgpack_value<'a>(&mut self, ev : &Event<&[u8]>)
+  {
+    match ev {
+      Event::Path(_depth,_path) => (),
+      Event::Value(send_path,v) =>
+      {
+        let mut file = self.find_or_create(send_path);
+        use std::io::Write;
+        file.write_all(&v).unwrap();
+      },
+      Event::Finished => (),
+    }
+  }
+}
+
+impl Sender<Event<&[u8]>> for ShredWriter<&[u8]> {
+  type SendError = ();
+
+  fn send<'a>(&mut self, ev: &'a Event<&'a [u8]>) -> Result<(), Self::SendError> {
     Ok(self.write_msgpack_value(&ev))
   }
 }
@@ -401,7 +450,10 @@ impl MsgPacker {
 }
 
 impl Handler for MsgPacker {
-  type V = Vec<u8>;
+  // V is the type of the data that Event contains
+  // TODO both of this work with only the need to borrow buf or not.
+  type V<'l> = &'l[u8];
+  // type V<'l> = Vec<u8>;
 
   // filters events from the streaming parser
   fn match_path(&self, json_path : &JsonPath) -> bool {
@@ -417,53 +469,45 @@ impl Handler for MsgPacker {
   }
 
   // encode values as MessagePack, then send to shredder
-  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &mut Snd)
-  -> Result<(),Snd::SendError> {
+  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &mut Snd)
+  -> Result<(),<Snd as Sender<Event<<MsgPacker as Handler>::V<'_>>>>::SendError>
+  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  {
     use json_event_parser::JsonEvent::*;
+    if !self.match_path(&path) { return Ok(()) }
+    let mut buf = vec![];
     let _ = match ev {
-      String(v) => if self.match_path(&path) {
-        let mut buf = vec![];
+      String(v) => {
         match rmp::encode::write_str(&mut buf, &v) {
-          Ok(()) => tx.send(&Event::Value(SendPath::from(path),buf)),
+          Ok(()) => tx.send(&Event::Value(SendPath::from(path),&buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
-      } else {
-        Ok(())
       }
 
-      Number(v) => if self.match_path(&path) {
+      Number(v) => {
         let value : serde_json::Number = match serde_json::from_str(v) {
           Ok(n) => n,
           Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
 
-        let mut buf = vec![];
         match rmp::encode::write_f64(&mut buf, value.as_f64().unwrap()) {
-          Ok(()) => tx.send(&Event::Value(SendPath::from(path), buf)),
+          Ok(()) => tx.send(&Event::Value(SendPath::from(path), &buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
-      } else {
-        Ok(())
       }
 
-      Boolean(v) => if self.match_path(&path) {
-        let mut buf = vec![];
+      Boolean(v) => {
         match rmp::encode::write_bool(&mut buf, v) {
-          Ok(()) => tx.send(&Event::Value(SendPath::from(path), buf)),
+          Ok(()) => tx.send(&Event::Value(SendPath::from(path), &buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
-      } else {
-        Ok(())
       }
 
-      Null => if self.match_path(&path) {
-        let mut buf = vec![];
+      Null => {
         match rmp::encode::write_nil(&mut buf) {
-          Ok(()) => tx.send(&Event::Value(SendPath::from(path), buf)),
+          Ok(()) => tx.send(&Event::Value(SendPath::from(path), &buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
-      } else {
-        Ok(())
       }
 
       _ => todo!(),
@@ -514,7 +558,10 @@ fn shred(dir : &std::path::PathBuf, maybe_readable_args : &[String]) {
   let istream = make_readable(maybe_readable_args);
   let mut jev = JsonEvents::new(istream);
 
-  let mut writer = ShredWriter::new(&dir);
+  // write events as Dremel-style record shred columns
+  let mut writer = ShredWriter::new(&dir, "mpk");
+
+  // serialisation format for columns
   let visitor = MsgPacker::new();
 
   match visitor.value(&mut jev, JsonPath::new(), 0, &mut writer ) {
