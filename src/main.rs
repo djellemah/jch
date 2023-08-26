@@ -4,16 +4,15 @@ type StrCon<T> = Box<T>;
 // trait PosReader : std::io::BufRead + std::io::Seek {}
 // trait PosReader : std::io::BufRead {}
 
-fn make_readable() -> StrCon<dyn std::io::BufRead> {
-  let args = std::env::args().collect::<Vec<_>>();
+fn make_readable(maybe_readable_args : &[String]) -> StrCon<dyn std::io::BufRead> {
   // use std::io::Read;
-  match &args[..] {
-    [_] => StrCon::new(std::io::stdin().lock()),
-    [_, arg_fn] => {
+  match &maybe_readable_args[..] {
+    [] => StrCon::new(std::io::stdin().lock()),
+    [arg_fn] => {
       let file = std::fs::File::open(arg_fn).expect("cannot open file {arg_fn}");
       StrCon::new(std::io::BufReader::new(file))
     }
-    _ => panic!("too many args")
+    _ => panic!("too many args {maybe_readable_args:?}")
   }
 }
 
@@ -188,7 +187,7 @@ enum Event<V> {
 
 trait Sender<T> {
   type SendError;
-  fn send(&self, t: T) -> Result<(), Self::SendError>;
+  fn send(&mut self, t: T) -> Result<(), Self::SendError>;
 }
 
 // for sending the same Path representation over the channel as the one that's constructed
@@ -228,9 +227,9 @@ trait Handler {
 
   // default implementation that does nothing and returns OK
   #[allow(unused_variables)]
-  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError>;
+  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd) -> Result<(),Snd::SendError>;
 
-  fn array<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
+  fn array<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &mut Snd ) -> Result<(),Snd::SendError> {
     let mut index = 0;
     let mut buf : Vec<u8> = vec![];
     while let Some(ev) = jev.next_buf(&mut buf) {
@@ -259,7 +258,8 @@ trait Handler {
     Ok(())
   }
 
-  fn object<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
+  fn object<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &mut Snd )
+  -> Result<(),Snd::SendError> {
     let mut buf : Vec<u8> = vec![];
     while let Some(ev) = jev.next_buf(&mut buf) {
       use json_event_parser::JsonEvent::*;
@@ -285,7 +285,8 @@ trait Handler {
     Ok(())
   }
 
-  fn value<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &Snd ) -> Result<(),Snd::SendError> {
+  fn value<Snd : Sender<Event<Self::V>>>(&self, jev : &mut JsonEvents, parents : Parents, depth : u64, tx : &mut Snd )
+  -> Result<(),Snd::SendError> {
     let mut buf : Vec<u8> = vec![];
     // json has exactly one top-level object
     if let Some(ev) = jev.next_buf(&mut buf) {
@@ -318,7 +319,8 @@ impl Handler for Plain
 
   // default implementation that does nothing and returns OK
   #[allow(unused_variables)]
-  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &Snd) -> Result<(),Snd::SendError> {
+  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
+  -> Result<(),Snd::SendError> {
     println!("{path}");
     Ok(())
   }
@@ -341,7 +343,7 @@ impl Handler for Valuer
     self.0(path)
   }
 
-  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &Snd)
+  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &mut Snd)
   -> Result<(),Snd::SendError> {
     use json_event_parser::JsonEvent::*;
     match ev {
@@ -383,50 +385,83 @@ impl Handler for Valuer
   }
 }
 
-struct MsgPacker{
-  files : std::collections::hash_map::HashMap<String, std::fs::File>
+// write each leaf path to a separate file
+// a la the Shredder algorithm in Dremel paper
+struct ShredWriter {
+  // files : std::cell::RefCell<std::collections::hash_map::HashMap<String, std::fs::File>>
+  dir : std::path::PathBuf,
+  files : std::collections::hash_map::HashMap<std::path::PathBuf, std::fs::File>,
 }
 
-
-impl MsgPacker {
-  fn new() -> Self {
-    Self { files: std::collections::hash_map::HashMap::new() }
+impl ShredWriter {
+  fn new(dir : &std::path::Path) -> Self {
+    Self { dir: dir.to_path_buf(), files: std::collections::hash_map::HashMap::new() }
   }
 
-  fn find_or_create<'a>(&'a mut self, filename : &String) -> &'a mut std::fs::File {
-    if self.files.contains_key(filename) {
-      self.files.get_mut(filename).unwrap()
+  // this converts a path in the form images/23423/image_name
+  // to images.image.mpk
+  // which basically means stripping out all Index components
+  fn filename_of_path(dir : &std::path::PathBuf, send_path : &jsonpath::SendPath) -> std::path::PathBuf {
+    let jsonpath::SendPath(steps) = send_path;
+    let steps = steps
+      .iter()
+      // strip index parts
+      .filter_map(|step| {
+        match step {
+          Step::Key(step) => Some(step.to_string()),
+          Step::Index(_) => None,
+        }
+      })
+      .collect::<Vec<String>>();
+    let dotpath = steps.join(".");
+    let filename = format!("{dotpath}.mpk");
+    dir.join(filename)
+  }
+
+  fn find_or_create<'a>(&'a mut self, send_path : &jsonpath::SendPath) -> &'a std::fs::File {
+    let filename = Self::filename_of_path(&self.dir, send_path);
+    if self.files.contains_key(&filename) {
+      self.files.get(&filename).unwrap()
     } else {
-      let file = std::fs::File::create(format!("{filename}.mpk")).unwrap();
-      self.files.insert(filename.clone(), file).unwrap();
-      self.find_or_create(filename)
+      eprintln!("new filename {filename:?}");
+      let file = std::fs::File::create(&filename).unwrap();
+      // by definition this is a None
+      if let Some(_) = self.files.insert(filename.clone(), file) {
+        panic!("oops with {filename:?}")
+      }
+      self.find_or_create(send_path)
     }
   }
 
   // receives events from the streaming parser
-  fn write_msgpack_value(&mut self, _path : &JsonPath, ev : &Event<Vec<u8>>)
+  fn write_msgpack_value(&mut self, ev : &Event<Vec<u8>>)
   {
     match ev {
       Event::Path(_depth,_path) => (),
       Event::Value(send_path,v) =>
       {
-        let jsonpath::SendPath(steps) = send_path;
-        let steps = steps.iter().map(|step| step.to_string()).collect::<Vec<String>>();
-        let filename = steps.join(".");
-        let file = self.find_or_create(&filename);
+        let mut file = self.find_or_create(send_path);
         use std::io::Write;
-        file.write_all(v);
+        file.write_all(v).unwrap();
       },
       Event::Finished => (),
     }
   }
 }
 
-impl<T> Sender<T> for MsgPacker {
+impl Sender<Event<Vec<u8>>> for ShredWriter {
   type SendError = ();
 
-  fn send(&self, _t: T) -> Result<(), Self::SendError> {
-    todo!("shuold not need to be implemented. So there's a design error.")
+  fn send(&mut self, ev: Event<Vec<u8>>) -> Result<(), Self::SendError> {
+    Ok(self.write_msgpack_value(&ev))
+  }
+}
+
+struct MsgPacker();
+
+impl MsgPacker {
+  fn new() -> Self {
+    Self()
   }
 }
 
@@ -441,22 +476,26 @@ impl Handler for MsgPacker {
     // This is pretty horrible. Maybe a DSL would be nicer.
     match &json_path[..] {
       // ie images/xxx
-      [&Step::Key(ref v), _] => &v[..] == "images",
+      [&Step::Key(ref v), &Step::Index(ref _index), &Step::Key(ref _leaf_name)] => &v[..] == "images",
       _ => false
     }
   }
 
-  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, _ : &Snd)
+  // encode values as MessagePack, then send to shredder
+  fn maybe_send_value<Snd : Sender<Event<Self::V>>>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &mut Snd)
   -> Result<(),Snd::SendError> {
     use json_event_parser::JsonEvent::*;
-    match ev {
+    let _ = match ev {
       String(v) => if self.match_path(&path) {
         let mut buf = vec![];
         match rmp::encode::write_str(&mut buf, &v) {
-          Ok(()) => self.write_msgpack_value(&path, &Event::Value(SendPath::from(path),buf)),
-          Err(err) => panic!("msgpack error {err}")
+          Ok(()) => tx.send(Event::Value(SendPath::from(path),buf)),
+          Err(err) => panic!("msgpack error {err}"),
         }
+      } else {
+        Ok(())
       }
+
       Number(v) => if self.match_path(&path) {
         let value : serde_json::Number = match serde_json::from_str(v) {
           Ok(n) => n,
@@ -465,26 +504,36 @@ impl Handler for MsgPacker {
 
         let mut buf = vec![];
         match rmp::encode::write_f64(&mut buf, value.as_f64().unwrap()) {
-          Ok(()) => self.write_msgpack_value(&path, &Event::Value(SendPath::from(path), buf)),
+          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
+      } else {
+        Ok(())
       }
+
       Boolean(v) => if self.match_path(&path) {
         let mut buf = vec![];
         match rmp::encode::write_bool(&mut buf, v) {
-          Ok(()) => self.write_msgpack_value(&path, &Event::Value(SendPath::from(path), buf)),
+          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
-      },
+      } else {
+        Ok(())
+      }
+
       Null => if self.match_path(&path) {
         let mut buf = vec![];
         match rmp::encode::write_nil(&mut buf) {
-          Ok(()) => self.write_msgpack_value(&path, &Event::Value(SendPath::from(path), buf)),
+          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
-      },
+      } else {
+        Ok(())
+      }
+
       _ => todo!(),
     };
+
     Ok(())
   }
 }
@@ -500,7 +549,7 @@ mod fn_snd {
   impl<T> super::Sender<T> for FnSnd<T> {
     type SendError = SendError<T>;
 
-    fn send(&self, t: T) -> Result<(), SendError<T>> {
+    fn send(&mut self, t: T) -> Result<(), SendError<T>> {
       Ok(self.0(t))
     }
   }
@@ -556,7 +605,8 @@ mod fn_snd {
 
 #[allow(dead_code, unused_mut, unused_variables)]
 fn show_jq_paths() {
-  let istream = make_readable();
+  let args = std::env::args().collect::<Vec<String>>();
+  let istream = make_readable(&args[..]);
   let mut jev = JsonEvents::new(istream);
   // ch_snd::channels(&mut jev);
 
@@ -590,13 +640,24 @@ fn show_jq_paths() {
   // };
 }
 
-fn main() {
-  let istream = make_readable();
+fn shred(dir : &std::path::PathBuf, maybe_readable_args : &[String]) {
+  let istream = make_readable(maybe_readable_args);
   let mut jev = JsonEvents::new(istream);
 
+  let mut writer = ShredWriter::new(&dir);
   let visitor = MsgPacker::new();
-  match visitor.value(&mut jev, JsonPath::new(), 0, &visitor ) {
+
+  match visitor.value(&mut jev, JsonPath::new(), 0, &mut writer ) {
     Ok(()) => (),
     Err(err) => { eprintln!("ending event reading {err:?}") },
+  }
+}
+
+fn main() {
+  let args = std::env::args().collect::<Vec<String>>();
+  match &args[..] {
+    [_] => panic!("you must provide data dir for files"),
+    [_, dir, rst@..] => shred(&std::path::PathBuf::from(dir), rst),
+    _ => panic!("only one data dir needed"),
   }
 }
