@@ -464,7 +464,7 @@ impl Handler for MsgPacker {
   }
 
   // encode values as MessagePack, then send to shredder
-  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, &ev : &json_event_parser::JsonEvent, tx : &mut Snd)
+  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<MsgPacker as Handler>::V<'_>>>>::SendError>
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
