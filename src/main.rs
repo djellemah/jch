@@ -402,6 +402,32 @@ impl ShredWriter<Vec<u8>>
   }
 }
 
+impl Sender<Event<&Vec<u8>>> for ShredWriter<&Vec<u8>> {
+  type SendError = ();
+
+  fn send<'a>(&mut self, ev: &'a Event<&Vec<u8>>) -> Result<(), Self::SendError> {
+    Ok(self.write_msgpack_value(&ev))
+  }
+}
+
+impl ShredWriter<&Vec<u8>>
+{
+  // receives events from the streaming parser
+  fn write_msgpack_value<'a>(&mut self, ev : &Event<&Vec<u8>>)
+  {
+    match ev {
+      Event::Path(_depth,_path) => (),
+      Event::Value(send_path,v) =>
+      {
+        let mut file = self.find_or_create(send_path);
+        use std::io::Write;
+        file.write_all(&v).unwrap();
+      },
+      Event::Finished => (),
+    }
+  }
+}
+
 impl Sender<Event<Vec<u8>>> for ShredWriter<Vec<u8>> {
   type SendError = ();
 
@@ -442,13 +468,56 @@ impl MsgPacker {
   fn new() -> Self {
     Self()
   }
+
+  fn encode_to_msgpack<'a>(path : &JsonPath, ev : &json_event_parser::JsonEvent, buf : &'a mut Vec<u8>)
+  -> Event<&'a Vec<u8>>
+  {
+    use json_event_parser::JsonEvent::*;
+
+    match ev {
+      &String(v) => {
+        match rmp::encode::write_str(buf, &v) {
+          Ok(()) => Event::Value(SendPath::from(path),buf),
+          Err(err) => panic!("msgpack error {err}"),
+        }
+      }
+
+      &Number(v) => {
+        let value : serde_json::Number = match serde_json::from_str(v) {
+          Ok(n) => n,
+          Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
+        };
+
+        match rmp::encode::write_f64(buf, value.as_f64().unwrap()) {
+          Ok(()) => Event::Value(SendPath::from(path), buf),
+          Err(err) => panic!("msgpack error {err}"),
+        }
+      }
+
+      &Boolean(v) => {
+        match rmp::encode::write_bool(buf, v) {
+          Ok(()) => Event::Value(SendPath::from(path), buf),
+          Err(err) => panic!("msgpack error {err}"),
+        }
+      }
+
+      Null => {
+        match rmp::encode::write_nil(buf) {
+          Ok(()) => Event::Value(SendPath::from(path), buf),
+          Err(err) => panic!("msgpack error {err}"),
+        }
+      }
+
+      _ => todo!(),
+    }
+  }
 }
 
 impl Handler for MsgPacker {
   // V is the type of the data that Event contains
   // TODO both of this work with only the need to borrow buf or not.
-  type V<'l> = &'l[u8];
-  // type V<'l> = Vec<u8>;
+  // type V<'l> = &'l[u8];
+  type V<'l> = &'l Vec<u8>;
 
   // filters events from the streaming parser
   fn match_path(&self, json_path : &JsonPath) -> bool {
@@ -468,46 +537,13 @@ impl Handler for MsgPacker {
   -> Result<(),<Snd as Sender<Event<<MsgPacker as Handler>::V<'_>>>>::SendError>
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
-    use json_event_parser::JsonEvent::*;
     if !self.match_path(&path) { return Ok(()) }
     let mut buf = vec![];
-    let _ = match ev {
-      String(v) => {
-        match rmp::encode::write_str(&mut buf, &v) {
-          Ok(()) => tx.send(&Event::Value(SendPath::from(path),&buf)),
-          Err(err) => panic!("msgpack error {err}"),
-        }
-      }
-
-      Number(v) => {
-        let value : serde_json::Number = match serde_json::from_str(v) {
-          Ok(n) => n,
-          Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
-        };
-
-        match rmp::encode::write_f64(&mut buf, value.as_f64().unwrap()) {
-          Ok(()) => tx.send(&Event::Value(SendPath::from(path), &buf)),
-          Err(err) => panic!("msgpack error {err}"),
-        }
-      }
-
-      Boolean(v) => {
-        match rmp::encode::write_bool(&mut buf, v) {
-          Ok(()) => tx.send(&Event::Value(SendPath::from(path), &buf)),
-          Err(err) => panic!("msgpack error {err}"),
-        }
-      }
-
-      Null => {
-        match rmp::encode::write_nil(&mut buf) {
-          Ok(()) => tx.send(&Event::Value(SendPath::from(path), &buf)),
-          Err(err) => panic!("msgpack error {err}"),
-        }
-      }
-
-      _ => todo!(),
-    };
-
+    let send_event = Self::encode_to_msgpack(path, ev, &mut buf);
+    if let Err(_msg) = tx.send(&send_event) {
+      // TODO Sender::Event::<V> does not implement Display or Debug so we can't use it here.
+      panic!("could not send event {ev:?}");
+    }
     Ok(())
   }
 }
