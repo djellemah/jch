@@ -1,9 +1,6 @@
 // type StrCon<T> = std::rc::Rc<T>;
 type StrCon<T> = Box<T>;
 
-// trait PosReader : std::io::BufRead + std::io::Seek {}
-// trait PosReader : std::io::BufRead {}
-
 fn make_readable(maybe_readable_args : &[String]) -> StrCon<dyn std::io::BufRead> {
   // use std::io::Read;
   match &maybe_readable_args[..] {
@@ -18,9 +15,7 @@ fn make_readable(maybe_readable_args : &[String]) -> StrCon<dyn std::io::BufRead
 
 
 pub struct JsonEvents {
-  // reader : json_event_parser::JsonReader<Box<dyn std::io::BufRead>>,
   reader : json_event_parser::JsonReader<Box<countio::Counter<Box<dyn std::io::BufRead>>>>,
-  // counter : &'a Box<countio::Counter<Box<dyn std::io::BufRead>>>,
   _buf : Vec<u8>,
 }
 
@@ -117,10 +112,8 @@ impl From<u64> for Step {
 }
 
 // https://docs.rs/rpds/latest/rpds/list/struct.List.html
-// type Parents = rpds::List<Step, archery::ArcK>;
-type Parents = rpds::Vector<Step>;
-// type Parents = rpds::List<Step>;
-type JsonPath = Parents;
+// type JsonPath = rpds::List<Step>;
+type JsonPath = rpds::Vector<Step>;
 
 mod jsonpath {
   use super::JsonPath;
@@ -340,9 +333,6 @@ struct ShredWriter<V> {
 
 impl<V> ShredWriter<V>
 {
-  // type V = &'a [u8];
-  // type V = Vec<u8>;
-
   fn new<S,P>(dir : P, ext : S)
   -> Self
   where
@@ -571,7 +561,7 @@ fn shred(dir : &std::path::PathBuf, maybe_readable_args : &[String]) {
 
   match visitor.value(&mut jev, JsonPath::new(), 0, &mut writer ) {
     Ok(()) => (),
-    Err(err) => { eprintln!("ending event reading {err:?}") },
+    Err(err) => { eprintln!("ending event reading because {err:?}") },
   }
 }
 
