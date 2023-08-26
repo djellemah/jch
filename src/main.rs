@@ -348,7 +348,7 @@ impl ShredWriter {
       })
       .collect::<Vec<String>>();
     let dotpath = steps.join(".");
-    let mut filename = std::path::PathBuf::from(dotpath);
+    let mut filename = std::path::PathBuf::from(format!("{dotpath}.dummy"));
     filename.set_extension(ext);
     dir.join(filename)
   }
