@@ -157,6 +157,7 @@ mod sendpath {
   use super::JsonPath;
   use super::Step;
 
+  // a tree path as sent by the streaming parser to a handler of some kind, along with its leaf value.
   struct SendPath(Vec<Step>);
   impl From<&JsonPath> for SendPath {
     fn from(path_list : &JsonPath) -> Self {
@@ -220,6 +221,7 @@ macro_rules! package {
 
 // This really just becomes a place to hang match_path and maybe_send_value without threading
 // those functions through the JsonEvent handlers.
+// Effectively it's a visitor with accept = match_path and visit = maybe_send_value
 trait Handler {
   type V;
 
@@ -312,7 +314,6 @@ trait Handler {
 }
 
 // write each leaf value to a separate file for its path
-// write each leaf path to a separate file
 // a la the Shredder algorithm in Dremel paper
 struct ShredWriter {
   // files : std::cell::RefCell<std::collections::hash_map::HashMap<String, std::fs::File>>
