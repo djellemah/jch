@@ -189,7 +189,7 @@ enum Event<V> {
 
 trait Sender<T> {
   type SendError;
-  fn send(&mut self, t: T) -> Result<(), Self::SendError>;
+  fn send(&mut self, t: &T) -> Result<(), Self::SendError>;
 }
 
 // for sending the same Path representation over the channel as the one that's constructed
@@ -208,16 +208,16 @@ macro_rules! package_same {
 macro_rules! package {
   // see previous to distinguish where clone() is needed
   ($tx:ident,0,&$parents:expr) => {
-    $tx.send( Event::Path(0, SendPath::from($parents)) )
+    $tx.send( &Event::Path(0, SendPath::from($parents)) )
   };
   ($tx:ident,0,$parents:expr) => {
-    $tx.send( Event::Path(0, SendPath::from($parents)) )
+    $tx.send( &Event::Path(0, SendPath::from($parents)) )
   };
   ($tx:ident,$depth:ident,&$parents:expr) => {
-    $tx.send( Event::Path(0, SendPath::from($parents)) )
+    $tx.send( &Event::Path(0, SendPath::from($parents)) )
   };
   ($tx:ident,$depth:ident,$parents:expr) => {
-    $tx.send( Event::Path(0, SendPath::from($parents)) )
+    $tx.send( &Event::Path(0, SendPath::from($parents)) )
   };
 }
 
@@ -254,7 +254,7 @@ trait Handler {
         ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
         EndObject => panic!("should never receive EndObject {parents}"),
 
-        Eof => tx.send(Event::Finished),
+        Eof => tx.send(&Event::Finished),
       };
       match res {
           Ok(()) => (),
@@ -282,7 +282,7 @@ trait Handler {
         EndObject => return Ok(()),
 
         // fin
-        Eof => tx.send(Event::Finished),
+        Eof => tx.send(&Event::Finished),
       };
       match res {
           Ok(()) => (),
@@ -310,10 +310,10 @@ trait Handler {
         EndObject => panic!("should never receive EndObject {parents}"),
 
         // fin
-        Eof => tx.send(Event::Finished),
+        Eof => tx.send(&Event::Finished),
       }
     } else {
-      tx.send(Event::Finished)
+      tx.send(&Event::Finished)
     }
   }
 }
@@ -387,7 +387,7 @@ impl ShredWriter {
 impl Sender<Event<Vec<u8>>> for ShredWriter {
   type SendError = ();
 
-  fn send(&mut self, ev: Event<Vec<u8>>) -> Result<(), Self::SendError> {
+  fn send<'a>(&mut self, ev: &Event<Vec<u8>>) -> Result<(), Self::SendError> {
     Ok(self.write_msgpack_value(&ev))
   }
 }
@@ -424,7 +424,7 @@ impl Handler for MsgPacker {
       String(v) => if self.match_path(&path) {
         let mut buf = vec![];
         match rmp::encode::write_str(&mut buf, &v) {
-          Ok(()) => tx.send(Event::Value(SendPath::from(path),buf)),
+          Ok(()) => tx.send(&Event::Value(SendPath::from(path),buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
       } else {
@@ -439,7 +439,7 @@ impl Handler for MsgPacker {
 
         let mut buf = vec![];
         match rmp::encode::write_f64(&mut buf, value.as_f64().unwrap()) {
-          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
+          Ok(()) => tx.send(&Event::Value(SendPath::from(path), buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
       } else {
@@ -449,7 +449,7 @@ impl Handler for MsgPacker {
       Boolean(v) => if self.match_path(&path) {
         let mut buf = vec![];
         match rmp::encode::write_bool(&mut buf, v) {
-          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
+          Ok(()) => tx.send(&Event::Value(SendPath::from(path), buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
       } else {
@@ -459,7 +459,7 @@ impl Handler for MsgPacker {
       Null => if self.match_path(&path) {
         let mut buf = vec![];
         match rmp::encode::write_nil(&mut buf) {
-          Ok(()) => tx.send(Event::Value(SendPath::from(path), buf)),
+          Ok(()) => tx.send(&Event::Value(SendPath::from(path), buf)),
           Err(err) => panic!("msgpack error {err}"),
         }
       } else {
@@ -472,7 +472,6 @@ impl Handler for MsgPacker {
     Ok(())
   }
 }
-
 
 #[allow(dead_code, unused_mut, unused_variables)]
 fn show_jq_paths() {
