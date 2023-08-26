@@ -318,18 +318,19 @@ trait Handler {
 struct ShredWriter {
   // files : std::cell::RefCell<std::collections::hash_map::HashMap<String, std::fs::File>>
   dir : std::path::PathBuf,
+  ext : String,
   files : std::collections::hash_map::HashMap<std::path::PathBuf, std::fs::File>,
 }
 
 impl ShredWriter {
   fn new(dir : &std::path::Path) -> Self {
-    Self { dir: dir.to_path_buf(), files: std::collections::hash_map::HashMap::new() }
+    Self { dir: dir.to_path_buf(), files: std::collections::hash_map::HashMap::new(), ext: "mpk".into() }
   }
 
   // this converts a path in the form images/23423/image_name
   // to images.image.mpk
   // which basically means stripping out all Index components
-  fn filename_of_path(dir : &std::path::PathBuf, send_path : &jsonpath::SendPath) -> std::path::PathBuf {
+  fn filename_of_path(dir : &std::path::PathBuf, send_path : &jsonpath::SendPath, ext : &String) -> std::path::PathBuf {
     let jsonpath::SendPath(steps) = send_path;
     let steps = steps
       .iter()
@@ -342,12 +343,13 @@ impl ShredWriter {
       })
       .collect::<Vec<String>>();
     let dotpath = steps.join(".");
-    let filename = format!("{dotpath}.mpk");
+    let mut filename = std::path::PathBuf::from(dotpath);
+    filename.set_extension(ext);
     dir.join(filename)
   }
 
   fn find_or_create<'a>(&'a mut self, send_path : &jsonpath::SendPath) -> &'a std::fs::File {
-    let filename = Self::filename_of_path(&self.dir, send_path);
+    let filename = Self::filename_of_path(&self.dir, send_path, &self.ext);
     if self.files.contains_key(&filename) {
       self.files.get(&filename).unwrap()
     } else {
