@@ -335,21 +335,19 @@ impl ShredWriter {
   // this converts a path in the form images/23423/image_name
   // to images.image.mpk
   // which basically means stripping out all Index components
+  // TODO this is critical path for every single leaf that will be written. So it must be fast.
   fn filename_of_path(dir : &std::path::PathBuf, send_path : &jsonpath::SendPath, ext : &String) -> std::path::PathBuf {
-    let jsonpath::SendPath(steps) = send_path;
-    let steps = steps
-      .iter()
-      // strip index parts
-      .filter_map(|step| {
-        match step {
-          Step::Key(step) => Some(step.to_string()),
-          Step::Index(_) => None,
-        }
-      })
-      .collect::<Vec<String>>();
-    let dotpath = steps.join(".");
-    let mut filename = std::path::PathBuf::from(format!("{dotpath}.dummy"));
-    filename.set_extension(ext);
+    // probably at least one index will be dropped, but we'll definitely need
+    // space for the extension (ie +1).
+    let mut steps : Vec<&str> = Vec::with_capacity(send_path.0.len() + 1);
+    for step in send_path.0.iter() {
+      if let Step::Key(step) = step { steps.push(step.as_str()) }
+    }
+    // append extension
+    steps.push(ext);
+    // construct the filename
+    let filename = steps.join(".");
+    // append filename to pathname
     dir.join(filename)
   }
 
@@ -364,6 +362,8 @@ impl ShredWriter {
       if let Some(_) = self.files.insert(filename.clone(), file) {
         panic!("oops with {filename:?}")
       }
+      // This only happens the first time the file is created,
+      // so the extra lookup has little impact on the normal case.
       self.find_or_create(send_path)
     }
   }
