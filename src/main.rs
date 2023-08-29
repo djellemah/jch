@@ -1,7 +1,9 @@
 // type StrCon<T> = std::rc::Rc<T>;
 type StrCon<T> = Box<T>;
 
-fn make_readable(maybe_readable_args : &[String]) -> StrCon<dyn std::io::BufRead> {
+fn make_readable<S>(maybe_readable_args : &[S]) -> StrCon<dyn std::io::BufRead>
+where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
+{
   // use std::io::Read;
   match &maybe_readable_args[..] {
     [] => StrCon::new(std::io::stdin().lock()),
@@ -68,7 +70,7 @@ impl JsonEvents {
   }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Ord,PartialEq,Eq,PartialOrd)]
 pub enum Step {
   Key(String),
   Index(u64),
@@ -118,8 +120,8 @@ type JsonPath = rpds::Vector<Step>;
 mod jsonpath {
   use super::JsonPath;
 
-  #[derive(Debug)]
-  pub struct SendPath(pub JsonPath);
+#[derive(Debug,Ord,PartialOrd,Eq,PartialEq,Clone)]
+pub struct SendPath(pub JsonPath);
 
   impl From<&JsonPath> for SendPath {
     fn from(jsonpath : &JsonPath) -> Self {
@@ -609,7 +611,9 @@ fn show_jq_paths() {
   // };
 }
 
-fn shred(dir : &std::path::PathBuf, maybe_readable_args : &[String]) {
+fn shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
+where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
+{
   let istream = make_readable(maybe_readable_args);
   let mut jev = JsonEvents::new(istream);
 
@@ -625,11 +629,19 @@ fn shred(dir : &std::path::PathBuf, maybe_readable_args : &[String]) {
   }
 }
 
+mod schema;
+
 fn main() {
   let args = std::env::args().collect::<Vec<String>>();
+  let args = args.iter().map(|a| a.as_str()).collect::<Vec<&str>>();
   match &args[..] {
+    [_,"-s", rst @ ..] => {
+      let istream = make_readable(rst);
+      let mut jev = JsonEvents::new(istream);
+      schema::schema(&mut jev);
+    }
     [_] => panic!("you must provide data dir for files"),
-    [_, dir, rst@..] => shred(&std::path::PathBuf::from(dir), rst),
+    [_, dir, rst @ ..] => shred(&std::path::PathBuf::from(dir), rst),
     _ => panic!("only one data dir needed"),
   }
 }
