@@ -178,6 +178,7 @@ enum Event<V> {
   Path(u64,SendPath),
   Value(SendPath,V),
   Finished,
+  Error(String),
 }
 
 trait Sender<T> {
@@ -216,24 +217,25 @@ macro_rules! package {
 
 // This traverses/handles the incoming json stream events.
 //
-// Rally just becomes a place to hang match_path and maybe_send_value without
+// Really just becomes a place to hang match_path and maybe_send_value without
 // threading those functions through the JsonEvent handlers. Effectively it's a
 // visitor with accept = match_path and visit = maybe_send_value
 trait Handler {
   // value contained by Event
   // Lifetime bound is so that events are allowed the shortest lifetime possible,
   // hence the where clauses and higher-ranked for declarations in the below trait methods.
-  type V<'l> where Self: 'l;
+  type V<'l> where Self : 'l;
 
   fn match_path(&self, path : &JsonPath) -> bool;
 
   // default implementation that does nothing and returns OK
-  fn maybe_send_value<'l, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
+  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
+  // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   ;
 
-  fn array<'l, Snd>(&self, jev : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd )
+  fn array<'a, Snd>(&self, jev : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd )
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
@@ -398,6 +400,7 @@ impl ShredWriter<Vec<u8>>
         file.write_all(&v).unwrap();
       },
       Event::Finished => (),
+      &Event::Error(_) => todo!(),
     }
   }
 }
@@ -424,6 +427,7 @@ impl ShredWriter<&Vec<u8>>
         file.write_all(&v).unwrap();
       },
       Event::Finished => (),
+      &Event::Error(_) => todo!(),
     }
   }
 }
@@ -450,6 +454,7 @@ impl ShredWriter<&[u8]>
         file.write_all(&v).unwrap();
       },
       Event::Finished => (),
+      &Event::Error(_) => todo!(),
     }
   }
 }
@@ -483,14 +488,32 @@ impl MsgPacker {
       }
 
       &Number(v) => {
-        let value : serde_json::Number = match serde_json::from_str(v) {
+        let number_value : serde_json::Number = match serde_json::from_str(v) {
           Ok(n) => n,
           Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
 
-        match rmp::encode::write_f64(buf, value.as_f64().unwrap()) {
-          Ok(()) => Event::Value(SendPath::from(path), buf),
-          Err(err) => panic!("msgpack error {err}"),
+        // NOTE trying to wrap this in a Result instead of panic! causes trouble
+        // because Event<&'a mut Vec<u8>? is not coerceable to Event<&'a Vec<u8>>
+        // despite coercion rules ¯\_(/")_/¯
+        // So Event enum then needs the Error(_) item
+        if number_value.is_u64() {
+          match rmp::encode::write_uint(buf, number_value.as_u64().unwrap()) {
+            Ok(_) => Event::Value(SendPath::from(path), buf),
+            Err(err) => Event::Error(format!("{err:?}")),
+          }
+        } else if number_value.is_i64() {
+          match rmp::encode::write_sint(buf, number_value.as_i64().unwrap()) {
+            Ok(_) => Event::Value(SendPath::from(path), buf),
+            Err(err) => Event::Error(format!("{err:?}")),
+          }
+        } else if number_value.is_f64() {
+          match rmp::encode::write_f64(buf, number_value.as_f64().unwrap()) {
+            Ok(()) => Event::Value(SendPath::from(path), buf),
+            Err(err) => Event::Error(format!("{err:?}")),
+          }
+        } else {
+          panic!("wut!?")
         }
       }
 
@@ -535,6 +558,7 @@ impl Handler for MsgPacker {
   // encode values as MessagePack, then send to shredder
   fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<MsgPacker as Handler>::V<'_>>>>::SendError>
+  // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
     if !self.match_path(&path) { return Ok(()) }
