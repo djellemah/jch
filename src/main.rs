@@ -640,6 +640,7 @@ fn main() {
       let mut jev = JsonEvents::new(istream);
       schema::schema(&mut jev);
     }
+    [_,"-z"] => schema::sizes(),
     [_] => panic!("you must provide data dir for files"),
     [_, dir, rst @ ..] => shred(&std::path::PathBuf::from(dir), rst),
     _ => panic!("only one data dir needed"),

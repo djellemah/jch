@@ -58,11 +58,13 @@ pub enum SchemaType {
 struct Leaf {
   kind : SchemaType,
   count : std::cell::RefCell<u64>,
+  // min/max length etc go here
+  aggregate : std::cell::RefCell<SchemaType>,
 }
 
 impl Leaf {
   fn new(kind : SchemaType) -> Self {
-    Self{ kind: kind.clone(), count: std::cell::RefCell::new(1)}
+    Self{ kind: kind.clone(), count: std::cell::RefCell::new(1), aggregate: std::cell::RefCell::new(kind.clone())}
   }
 }
 
@@ -80,7 +82,6 @@ impl std::hash::Hash for Leaf {
     self.count.borrow().hash(hsh);
   }
 }
-
 
 #[derive(Debug,Clone,Ord,PartialEq,Eq,PartialOrd)]
 pub enum Step {
@@ -207,14 +208,17 @@ impl std::fmt::Display for SchemaCollector {
       const WIDTH : usize = 40;
       // because otherwise 50 width is applied to each element of k
 
-      let kfmts = kinds
+      // kinds is a Set, which doesn't really have a concept of .first()
+      // so just collect the pieces as an iterator.
+      let mut kfmts = kinds
         .iter()
         .map(|k| format!("{k:WIDTH$}") )
         .collect::<Vec<String>>();
 
       let kfmt = match kinds.len() {
         0 => String::new(),
-        1 => kfmts.into_iter().last().unwrap(), // no point creating another string here
+        // no point creating another string here, and first == last
+        1 => kfmts.pop().unwrap(),
         _ => format!("[{}]", kfmts.join(","))
       };
 
@@ -227,10 +231,11 @@ impl std::fmt::Display for SchemaCollector {
 impl Sender<Event<SchemaType>> for SchemaCollector {
   type SendError = ();
 
+  // This is where we aggregate the types from the stream of incoming types
   fn send<'a>(&mut self, ev: &'a Event<SchemaType>) -> Result<(), Self::SendError> {
     match ev {
         Event::Path(_p, _v) => todo!(),
-        Event::Value(p, schema_type) => {
+        Event::Value(p, value_type) => {
           let path = p.0.iter().map(|step| {
             // replace all indexes in path with generic placeholder. Because we
             // want the schema not the full tree.
@@ -241,13 +246,14 @@ impl Sender<Event<SchemaType>> for SchemaCollector {
           }).collect::<Vec<Step>>();
           let path = SchemaPath(path);
 
+          // leaf_paths is path => Set<Leaf>
           match self.leaf_paths.get_mut(&path) {
             Some(leafs) => {
-              // find the type in leafs
+              // find the current type in leafs
               use SchemaType::*;
               use NumberType::*;
-              let kind = leafs.iter().find(|Leaf{kind: stored_kind, ..}| {
-                match (schema_type, stored_kind) {
+              let kind_option = leafs.iter().find(|Leaf{kind: stored_kind, ..}| {
+                match (value_type, stored_kind) {
                   (String(_), String(_)) => true,
                   (Number(Unsigned(_)), Number(Unsigned(_))) => true,
                   (Number(Signed(_,_)), Number(Signed(_,_))) => true,
@@ -258,19 +264,34 @@ impl Sender<Event<SchemaType>> for SchemaCollector {
                 }
               });
 
+              // This is is now a particular SchemaType stored at leaf
               // either create a new type, or update the existing type with current counts and values
-              match kind {
-                Some(stored_kind) => {
-                  let mut count = stored_kind.count.borrow_mut();
+              match kind_option {
+                Some(kind) => {
+                  // update the max/min and other aggregates here
+
+                  let mut count = kind.count.borrow_mut();
                   *count += 1;
+
+                  // transfer values from value_type (ie the current leaf value) to aggregate (ie in the schema we're building)
+                  let updated_aggregate_option = match (value_type,&*kind.aggregate.borrow()) {
+                    (&String(val_n), &String(agg_n)) => Some(String(std::cmp::max(val_n,agg_n))),
+                    (&Number(Unsigned(val_max)), &Number(Unsigned(agg_max))) => Some(Number(Unsigned(std::cmp::max(val_max,agg_max)))),
+                    (&Number(Signed(val_min,val_max)), &Number(Signed(agg_min,agg_max))) => Some(Number(Signed(std::cmp::min(val_min,agg_min), std::cmp::max(val_max,agg_max)))),
+                    (&Number(Float(val_min,val_max)), &Number(Float(agg_min,agg_max))) => Some(Number(Float(f64::min(val_min,agg_min), f64::max(val_max,agg_max)))),
+                    _ => None, // because no aggregates are collected for other types, so no need to update anything
+                  };
+                  if let Some(updated_aggregate) = updated_aggregate_option {
+                    kind.aggregate.replace(updated_aggregate);
+                  }
                 }
-                None => { leafs.insert(Leaf::new(schema_type.clone())); }
+                None => { leafs.insert(Leaf::new(value_type.clone())); }
               }
 
             },
             None => {
               let mut leafs = std::collections::HashSet::new();
-              leafs.insert(Leaf::new(schema_type.clone()));
+              leafs.insert(Leaf::new(value_type.clone()));
               self.leaf_paths.insert(path, leafs);
             }
           }
@@ -293,4 +314,9 @@ pub fn schema(jev : &mut crate::JsonEvents) {
     Ok(()) => println!("{collector}"),
     Err(err) => { eprintln!("ending event reading because {err:?}") },
   }
+}
+
+pub fn sizes() {
+  println!("SchemaType {}", std::mem::size_of::<SchemaType>());
+  println!("Leaf {}", std::mem::size_of::<Leaf>());
 }
