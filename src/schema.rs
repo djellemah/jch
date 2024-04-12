@@ -1,4 +1,4 @@
-use crate::Handler;
+use crate::handler::Handler;
 use crate::Sender;
 use crate::JsonPath;
 use crate::Event;
