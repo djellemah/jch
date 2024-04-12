@@ -15,7 +15,7 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
   }
 }
 
-
+// Source of Json parse events, ie the json parser
 pub struct JsonEvents {
   reader : json_event_parser::JsonReader<Box<countio::Counter<Box<dyn std::io::BufRead>>>>,
   _buf : Vec<u8>,
@@ -120,8 +120,8 @@ type JsonPath = rpds::Vector<Step>;
 mod jsonpath {
   use super::JsonPath;
 
-#[derive(Debug,Ord,PartialOrd,Eq,PartialEq,Clone)]
-pub struct SendPath(pub JsonPath);
+  #[derive(Debug,Ord,PartialOrd,Eq,PartialEq,Clone)]
+  pub struct SendPath(pub JsonPath);
 
   impl From<&JsonPath> for SendPath {
     fn from(jsonpath : &JsonPath) -> Self {
@@ -164,7 +164,7 @@ mod sendpath {
 
   impl std::fmt::Display for SendPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-      let string_parts = self.0.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
+      let string_parts = self.0.iter().map(ToString::to_string).collect::<Vec<String>>();
       let repr = string_parts.join("/");
 
       write!(f,"{repr}")
@@ -332,6 +332,7 @@ struct ShredWriter<V> {
   dir : std::path::PathBuf,
   ext : String,
   files : std::collections::hash_map::HashMap<std::path::PathBuf, std::fs::File>,
+  // only exists so rust doesn't erase V
   _event_marker : std::marker::PhantomData<V>,
 }
 
@@ -354,7 +355,10 @@ impl<V> ShredWriter<V>
   // this converts a path in the form images/23423/image_name
   // to images.image.mpk
   // which basically means stripping out all Index components
+  //
   // TODO this is critical path for every single leaf that will be written. So it must be fast.
+  // So probably the best way to do that is to skip the intermediate assignment of
+  // 'steps' and just append directly to the (dir : Pathbuf)
   fn filename_of_path(dir : &std::path::PathBuf, send_path : &jsonpath::SendPath, ext : &String) -> std::path::PathBuf {
     // probably at least one index will be dropped, but we'll definitely need
     // space for the extension (ie +1).
@@ -370,6 +374,13 @@ impl<V> ShredWriter<V>
     dir.join(filename)
   }
 
+  // find or create a given file for the jsonpath
+  //
+  // Self keeps a hashmap of
+  //
+  // PathBuf => File
+  //
+  // so it doesn't repeatedly reopen the same files.
   fn find_or_create<'a>(&'a mut self, send_path : &jsonpath::SendPath) -> &'a std::fs::File {
     let filename = Self::filename_of_path(&self.dir, send_path, &self.ext);
     if self.files.contains_key(&filename) {
@@ -632,17 +643,18 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 mod schema;
 
 fn main() {
-  let args = std::env::args().collect::<Vec<String>>();
-  let args = args.iter().map(|a| a.as_str()).collect::<Vec<&str>>();
-  match &args[..] {
-    [_,"-s", rst @ ..] => {
+  let args : Vec<String> = std::env::args().collect();
+  let args : Vec<&str> = args.iter().map(String::as_str).collect();
+  match &args[1..] {
+    ["-s", rst @ ..] => {
       let istream = make_readable(rst);
       let mut jev = JsonEvents::new(istream);
       schema::schema(&mut jev);
     }
-    [_,"-z"] => schema::sizes(),
-    [_] => panic!("you must provide data dir for files"),
-    [_, dir, rst @ ..] => shred(&std::path::PathBuf::from(dir), rst),
-    _ => panic!("only one data dir needed"),
+    ["-z"] => schema::sizes(),
+    ["-h"] => println!("-z file for sizes, -s file for schema"),
+    [] => panic!("you must provide data dir for files"),
+    [ dir, rst @ ..] => shred(&std::path::PathBuf::from(dir), rst),
+    // _ => panic!("only one data dir needed"),
   }
 }
