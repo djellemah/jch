@@ -114,10 +114,45 @@ impl ShredWriter<&Vec<u8>>
   }
 }
 
+impl ShredWriter<&[u8]>
+{
+  // receives events from the streaming parser
+  fn write_msgpack_value<'a>(&mut self, ev : &Event<&[u8]>)
+  {
+    match ev {
+      Event::Path(_depth,_path) => (),
+      Event::Value(send_path,v) =>
+      {
+        let mut file = self.find_or_create(send_path);
+        use std::io::Write;
+        file.write_all(&v).unwrap();
+      },
+      Event::Finished => (),
+      &Event::Error(_) => todo!(),
+    }
+  }
+}
+
 impl Sender<Event<&[u8]>> for ShredWriter<&[u8]> {
   type SendError = ();
 
   fn send<'a>(&mut self, ev: &'a Event<&'a [u8]>) -> Result<(), Self::SendError> {
+    Ok(self.write_msgpack_value(&ev))
+  }
+}
+
+impl Sender<Event<&Vec<u8>>> for ShredWriter<&Vec<u8>> {
+  type SendError = ();
+
+  fn send<'a>(&mut self, ev: &'a Event<&Vec<u8>>) -> Result<(), Self::SendError> {
+    Ok(self.write_msgpack_value(&ev))
+  }
+}
+
+impl Sender<Event<Vec<u8>>> for ShredWriter<Vec<u8>> {
+  type SendError = ();
+
+  fn send<'a>(&mut self, ev: &'a Event<Vec<u8>>) -> Result<(), Self::SendError> {
     Ok(self.write_msgpack_value(&ev))
   }
 }
@@ -224,21 +259,5 @@ impl Handler for MsgPacker {
       panic!("could not send event {ev:?}");
     }
     Ok(())
-  }
-}
-
-impl Sender<Event<&Vec<u8>>> for ShredWriter<&Vec<u8>> {
-  type SendError = ();
-
-  fn send<'a>(&mut self, ev: &'a Event<&Vec<u8>>) -> Result<(), Self::SendError> {
-    Ok(self.write_msgpack_value(&ev))
-  }
-}
-
-impl Sender<Event<Vec<u8>>> for ShredWriter<Vec<u8>> {
-  type SendError = ();
-
-  fn send<'a>(&mut self, ev: &'a Event<Vec<u8>>) -> Result<(), Self::SendError> {
-    Ok(self.write_msgpack_value(&ev))
   }
 }

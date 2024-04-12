@@ -1,7 +1,6 @@
 // highly unlikely the number of elements in a json array will exceed
 // 2^64 ie 18,446,744,073,709,551,616
 type IndexInteger = u64;
-type IndexOffset = i64;
 
 // One step in the path, which is either a tag name, or an integer index.
 #[derive(Debug,Clone,Ord,PartialEq,Eq,PartialOrd)]
@@ -20,6 +19,8 @@ impl Step {
   }
 }
 
+// So we can offset an index into an array in both directions
+type IndexOffset = i64;
 impl std::ops::Add<IndexOffset> for Step
 {
   type Output = Self;
