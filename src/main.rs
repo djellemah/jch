@@ -70,10 +70,14 @@ impl JsonEvents {
   }
 }
 
+type IndexInteger = u128;
+type IndexOffset = i128;
+
+// One step in the path, which is either a tag name, or an integer index.
 #[derive(Debug,Clone,Ord,PartialEq,Eq,PartialOrd)]
 pub enum Step {
   Key(String),
-  Index(u64),
+  Index(IndexInteger),
 }
 
 impl Step {
@@ -82,6 +86,22 @@ impl Step {
     match &self {
       Step::Key(v) => panic!("{v} is not an integer"),
       Step::Index(v) => Step::Index(v+1),
+    }
+  }
+}
+
+impl std::ops::Add<IndexOffset> for Step
+{
+  type Output = Self;
+
+  fn add(self, offset : IndexOffset) -> Self {
+    match &self {
+      Step::Key(v) => panic!("{v} is not an integer"),
+      Step::Index(v) => {
+        let (new_pos, overflow) = offset.overflowing_add_unsigned(*v);
+        if overflow {panic!("offset {offset} from {v} is overflow")};
+        Step::Index(new_pos as IndexInteger)
+      }
     }
   }
 }
@@ -109,8 +129,8 @@ impl From<&str> for Step {
   fn from(s: &str) -> Self { Self::Key(s.to_string()) }
 }
 
-impl From<u64> for Step {
-  fn from(s: u64) -> Self { Self::Index(s) }
+impl From<IndexInteger> for Step {
+  fn from(s: IndexInteger) -> Self { Self::Index(s) }
 }
 
 // https://docs.rs/rpds/latest/rpds/list/struct.List.html
