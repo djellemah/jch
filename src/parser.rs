@@ -1,5 +1,3 @@
-pub type StrCon<T> = Box<T>;
-
 // Source of Json parse events, ie the json parser
 pub struct JsonEvents {
   reader : json_event_parser::JsonReader<Box<countio::Counter<Box<dyn std::io::BufRead>>>>,
@@ -33,7 +31,7 @@ macro_rules! eventicize {
 }
 
 impl JsonEvents {
-  pub fn new(istream : StrCon<dyn std::io::BufRead>) -> Self {
+  pub fn new(istream : Box<dyn std::io::BufRead>) -> Self {
     let counter = Box::new(countio::Counter::new(istream));
     // let rcounter = &counter;
     let reader = json_event_parser::JsonReader::from_reader(counter);

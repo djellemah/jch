@@ -296,8 +296,8 @@ impl Sender<Event<SchemaType>> for SchemaCollector {
             }
           }
         }
-        Event::Finished => todo!(),
-        Event::Error(_) => todo!(),
+        Event::Finished => todo!("schema Event::Finished"),
+        Event::Error(_) => todo!("schema Event::Error"),
     }
     Ok(())
   }
