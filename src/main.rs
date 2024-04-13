@@ -1,14 +1,17 @@
+// parser and traits
 mod parser;
 mod jsonpath;
 mod sendpath;
 mod sender;
 mod handler;
 
+// handlers and sender implementations
 mod plain;
 mod shredder;
 mod schema;
 mod valuer;
 mod channel;
+mod fn_snd;
 
 use crate::parser::JsonEvents;
 use crate::sender::Event;
@@ -93,39 +96,42 @@ fn main() {
       let istream = make_readable(rst);
       let mut jevstream = JsonEvents::new(istream);
 
-      // kinda weird that two instances are needed. But mut and non-mut.
-      // TODO there must be some way to do this.
-      let mut plain_sender = plain::Plain;
-      let plain_handler = plain::Plain;
+      // just use a (mostly) simple function wrapper
+      // which just outputs the value if sent.
+      let sender = &mut fn_snd::FnSnd(|ev| Ok::<(),()>(println!("fn_snd {ev:?}")));
+      // always returns true for path matches
+      let visitor = plain::Plain;
 
       use handler::Handler;
-      match plain_handler.value(&mut jevstream, JsonPath::new(), 0, &mut plain_sender) {
-        Ok(()) => println!("Done"),
-        Err(err) => { eprintln!("ending event reading because {err:?}") },
-      }
-
+      visitor
+        .value(&mut jevstream, JsonPath::new(), 0, sender)
+        .unwrap_or_else(|err| eprintln!("ending event reading because {err:?}"));
     }
     ["-v", rst @ ..] => {
       let istream = make_readable(rst);
       let mut jevstream = JsonEvents::new(istream);
 
-      // accept all paths
-      let valuer = valuer::Valuer(|_path| true);
+      // accept all paths, and convert leafs to serde_json::Value
+      let visitor = valuer::Valuer(|_path| true);
       // just print them out
-      let mut sender = valuer::ValueSender;
+      // let sender = &mut valuer::ValueSender;
+      let sender = &mut fn_snd::FnSnd(|ev| Ok::<(),()>(println!("{ev:?}")));
       // go and doit
       use handler::Handler;
-      valuer.value(&mut jevstream, JsonPath::new(), 0, &mut sender).unwrap_or_else(|_| println!("uhoh"))
+      visitor
+        .value(&mut jevstream, JsonPath::new(), 0, sender)
+        .unwrap_or_else(|err| eprintln!("ending event reading because {err:?}"));
     }
     ["-c", rst @ ..] => {
       let istream = make_readable(rst);
       let mut jevstream = JsonEvents::new(istream);
+      // producer reads file and converts to serde_json events, consumer just receives them.
       channel::channels(&mut jevstream)
     }
     ["-z"] => schema::sizes(),
     ["-h"] => println!("-z file for sizes, -s file for schema"),
     [] => panic!("you must provide data dir for files"),
+    [ dir, rst] => shred(&std::path::PathBuf::from(dir), &[*rst]),
     [ dir, rst @ ..] => shred(&std::path::PathBuf::from(dir), rst),
-    // _ => panic!("only one data dir needed"),
   }
 }

@@ -24,10 +24,10 @@ impl Handler for Plain
     Ok(())
   }
 
-  fn match_path(&self, path : &JsonPath) -> bool {
-    println!("match {path}");
+  fn match_path(&self, _path : &JsonPath) -> bool {
+    // println!("match {path}");
     // if this was true, maybe_send_values would be called with the value as well.
-    false
+    true
   }
 }
 
