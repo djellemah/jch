@@ -1,3 +1,5 @@
+// Converts incoming JsonEvents to serde_json::Value
+
 use crate::sendpath::SendPath;
 use crate::handler::Handler;
 use crate::jsonpath::JsonPath;
@@ -45,46 +47,43 @@ impl Handler for Valuer
 
   // convert the string contained in the JsonEvent into a serde_json::Value
   // and call tx.send with that.
-  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, jev : &json_event_parser::JsonEvent, tx : &mut Snd)
+  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, jev : &json_event_parser::JsonEvent<'a>, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
     use json_event_parser::JsonEvent::*;
+    if !self.match_path(&path) {
+      return package!(tx,0,path)
+    }
     match jev {
-      String(v) => if self.match_path(&path) {
+      String(v) => {
         let value = serde_json::Value::String(v.to_string());
         // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
         tx.send(&Event::Value(SendPath::from(path),value))
-      } else {
-        // just send the path
-        package!(tx,0,path)
       }
-      Number(v) => if self.match_path(&path) {
+      Number(v) => {
         let value : serde_json::Number = match serde_json::from_str(v) {
             Ok(n) => n,
             Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
         // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
         tx.send(&Event::Value(SendPath::from(path), serde_json::Value::Number(value)))
-      } else {
-        // just send the path
-        package!(tx,0,path)
       }
-      Boolean(v) => if self.match_path(&path) {
+      Boolean(v) => {
         // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
         tx.send(&Event::Value(SendPath::from(path), serde_json::Value::Bool(*v)))
-      } else {
-        // just send the path
-        package!(tx,0,path)
-      },
-      Null => if self.match_path(&path) {
+      }
+      Null => {
         // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
         tx.send(&Event::Value(SendPath::from(path), serde_json::Value::Null))
-      } else {
-        // just send the path
-        package!(tx,0,path)
-      },
-      _ => todo!(),
+      }
+      // should never receive these. TODO but that fact should be encoded in types.
+      StartArray => todo!(),
+      EndArray => todo!(),
+      StartObject => todo!(),
+      EndObject => todo!(),
+      ObjectKey(_) => todo!(),
+      Eof => todo!(),
     }
   }
 }
