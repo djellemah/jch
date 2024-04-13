@@ -55,7 +55,6 @@ impl std::fmt::Octal for Step {
   }
 }
 
-
 impl From<&str> for Step {
   fn from(s: &str) -> Self { Self::Key(s.to_string()) }
 }

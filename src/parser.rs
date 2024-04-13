@@ -16,7 +16,8 @@ impl JsonEvents {
     Self{reader, _buf: buf}
   }
 
-  // it's a severe PITA to specify this as an implementation of Iterator
+  // This is an attempt to use JsonEvents as an iterator.
+  // But it's a severe PITA to specify this as an implementation of Iterator
   // TODO move error handling into next_buf
   #[allow(dead_code)]
   fn next(&mut self) -> Option<json_event_parser::JsonEvent> {

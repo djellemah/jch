@@ -4,7 +4,6 @@ use crate::handler::Handler;
 use crate::jsonpath::*;
 use crate::sendpath::*;
 
-
 pub struct ShredWriter<V> {
   dir : std::path::PathBuf,
   ext : String,

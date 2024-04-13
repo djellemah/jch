@@ -11,6 +11,8 @@ use crate::sendpath::Sender;
 use crate::jsonpath::Step;
 use crate::jsonpath::JsonPath;
 
+// The idea here was something like ruby's ARGF, ie stdin and then all command line args that are files.
+// But currently it only handles either stdin or a single file.
 fn make_readable<S>(maybe_readable_args : &[S]) -> StrCon<dyn std::io::BufRead>
 where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 {
