@@ -8,6 +8,7 @@ mod plain;
 mod shredder;
 mod schema;
 mod valuer;
+mod channel;
 
 use crate::parser::StrCon;
 use crate::parser::JsonEvents;
@@ -127,6 +128,11 @@ fn main() {
       // go and doit
       use handler::Handler;
       valuer.value(&mut jev, JsonPath::new(), 0, &mut sender).unwrap_or_else(|_| println!("uhoh"))
+    }
+    ["-c", rst @ ..] => {
+      let istream = make_readable(rst);
+      let mut jev = JsonEvents::new(istream);
+      channel::channels(&mut jev)
     }
     ["-z"] => schema::sizes(),
     ["-h"] => println!("-z file for sizes, -s file for schema"),

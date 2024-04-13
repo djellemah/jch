@@ -5,7 +5,7 @@
 use crate::sendpath::SendPath;
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub enum Event<V> {
   Path(u64,SendPath),
   Value(SendPath,V),
