@@ -1,7 +1,6 @@
 // Basically this implements a JsonPath that's optimised for sending over a
-// channel without excessive copying. copying, and also because the first few
-// steps in a json path tend to stay the same, but the lower paths change a
-// lot.
+// channel without excessive copying.
+
 use crate::jsonpath::JsonPath;
 
 // At one point, this was also implemented in terms of

@@ -1,3 +1,10 @@
+// This is a json path, ie an ordered set of steps,
+// where each step is either a key name or an index.
+// It must be optimised for add/remove the last element,
+// and cloning should be cheap.
+//
+// rpds::Vector meets those requirements.
+
 // highly unlikely the number of elements in a json array will exceed
 // 2^64 ie 18,446,744,073,709,551,616
 type IndexInteger = u64;
