@@ -11,7 +11,7 @@ edition = "2021"
 
 countio = "*"
 serde_json = "*"
-rpds = { version = "*", features = ["serde"] }
+rpds = { version = "1.1", features = ["serde"] }
 archery = "*"
 serde_yaml = "*"
 rmp-serde = "*"
