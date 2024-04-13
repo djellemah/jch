@@ -1,6 +1,6 @@
 use crate::parser::JsonEvents;
-use crate::sendpath::Sender;
-use crate::sendpath::Event;
+use crate::sender::Sender;
+use crate::sender::Event;
 use crate::jsonpath::*;
 
 // This traverses/handles the incoming json stream events.
@@ -20,9 +20,9 @@ pub trait Handler {
 
   // This will be called for each leaf value, along with its path.
   fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
-  -> Result<(),<Snd as crate::sendpath::Sender<crate::sendpath::Event<<Self as Handler>::V<'_>>>>::SendError>
+  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
-  where Snd : for <'x> crate::sendpath::Sender<crate::sendpath::Event<Self::V<'x>>>
+  where Snd : for <'x> Sender<Event<Self::V<'x>>>
   ;
 
   // Handle all arrays.

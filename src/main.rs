@@ -1,15 +1,17 @@
-mod jsonpath;
-mod handler;
-mod shredder;
-mod sendpath;
 mod parser;
+mod jsonpath;
+mod sendpath;
+mod sender;
+mod handler;
+
 mod plain;
+mod shredder;
 mod schema;
 
 use crate::parser::StrCon;
 use crate::parser::JsonEvents;
-use crate::sendpath::Event;
-use crate::sendpath::Sender;
+use crate::sender::Event;
+use crate::sender::Sender;
 use crate::jsonpath::Step;
 use crate::jsonpath::JsonPath;
 

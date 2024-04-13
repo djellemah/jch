@@ -2,7 +2,8 @@
 // a la the Shredder algorithm in Dremel paper
 use crate::handler::Handler;
 use crate::jsonpath::*;
-use crate::sendpath::*;
+use crate::sender::*;
+use crate::sendpath::SendPath;
 
 pub struct ShredWriter<V> {
   dir : std::path::PathBuf,

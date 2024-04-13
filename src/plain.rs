@@ -1,7 +1,7 @@
 use crate::handler::Handler;
 use crate::jsonpath::JsonPath;
-use crate::sendpath::Event;
-use crate::sendpath::Sender;
+use crate::sender::Event;
+use crate::sender::Sender;
 
 pub struct Plain;
 
