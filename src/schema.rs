@@ -181,7 +181,7 @@ impl Handler for SchemaCalculator {
   {
     if !self.match_path(&path) { return Ok(()) }
     let schema_type = self.collect_type(path, ev);
-    match tx.send(&Event::Value(path.into(), schema_type)) {
+    match tx.send(Box::new(Event::Value(path.into(), schema_type))) {
         Ok(()) => Ok(()),
         Err(_err) => panic!("aaargh implement Debug for Sender<Event...>"),
     }
@@ -232,8 +232,8 @@ impl Sender<Event<SchemaType>> for SchemaCollector {
   type SendError = ();
 
   // This is where we aggregate the types from the stream of incoming types
-  fn send<'a>(&mut self, ev: &'a Event<SchemaType>) -> Result<(), Self::SendError> {
-    match ev {
+  fn send<'a>(&mut self, ev: Box<Event<SchemaType>>) -> Result<(), Self::SendError> {
+    match &*ev {
         Event::Path(_p, _v) => todo!(),
         Event::Value(p, value_type) => {
           let path = p.0.iter().map(|step| {

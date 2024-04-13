@@ -53,7 +53,7 @@ pub trait Handler {
         ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
         EndObject => panic!("should never receive EndObject {parents}"),
 
-        Eof => tx.send(&Event::Finished),
+        Eof => tx.send(Box::new(Event::Finished)),
       };
       match res {
           Ok(()) => (),
@@ -86,7 +86,7 @@ pub trait Handler {
         EndObject => return Ok(()),
 
         // fin
-        Eof => tx.send(&Event::Finished),
+        Eof => tx.send(Box::new(Event::Finished)),
       };
       match res {
           Ok(()) => (),
@@ -116,10 +116,10 @@ pub trait Handler {
         EndObject => panic!("should never receive EndObject {parents}"),
 
         // fin
-        Eof => tx.send(&Event::Finished),
+        Eof => tx.send(Box::new(Event::Finished)),
       }
     } else {
-      tx.send(&Event::Finished)
+      tx.send(Box::new(Event::Finished))
     }
   }
 }

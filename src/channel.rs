@@ -9,8 +9,8 @@ impl<T : Clone> Sender<Event<T>> for ChSender<T> {
 
   // Here's where we actually do something with the json event
   // That is, decouple the handling of the parse events, from the actual parsing stream.
-  fn send<'a>(&mut self, ev: &'a Event<T>) -> Result<(), Self::SendError> {
-    self.0.send(ev.clone())
+  fn send<'a>(&mut self, ev: Box<Event<T>>) -> Result<(), Self::SendError> {
+    self.0.send(*ev)
   }
 }
 

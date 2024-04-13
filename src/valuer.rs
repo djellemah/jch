@@ -25,7 +25,7 @@ macro_rules! package {
     $tx.send( &Event::Path(0, SendPath::from($parents)) )
   };
   ($tx:ident,0,$parents:expr) => {
-    $tx.send( &Event::Path(0, SendPath::from($parents)) )
+    $tx.send( Box::new(Event::Path(0, SendPath::from($parents))) )
   };
   ($tx:ident,$depth:ident,&$parents:expr) => {
     $tx.send( &Event::Path(0, SendPath::from($parents)) )
@@ -59,7 +59,7 @@ impl Handler for Valuer
       String(v) => {
         let value = serde_json::Value::String(v.to_string());
         // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
-        tx.send(&Event::Value(SendPath::from(path),value))
+        tx.send(Box::new(Event::Value(SendPath::from(path),value)))
       }
       Number(v) => {
         let value : serde_json::Number = match serde_json::from_str(v) {
@@ -67,15 +67,15 @@ impl Handler for Valuer
             Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
         // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
-        tx.send(&Event::Value(SendPath::from(path), serde_json::Value::Number(value)))
+        tx.send(Box::new(Event::Value(SendPath::from(path), serde_json::Value::Number(value))))
       }
       Boolean(v) => {
         // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
-        tx.send(&Event::Value(SendPath::from(path), serde_json::Value::Bool(*v)))
+        tx.send(Box::new(Event::Value(SendPath::from(path), serde_json::Value::Bool(*v))))
       }
       Null => {
         // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
-        tx.send(&Event::Value(SendPath::from(path), serde_json::Value::Null))
+        tx.send(Box::new(Event::Value(SendPath::from(path), serde_json::Value::Null)))
       }
       // should never receive these. TODO but that fact should be encoded in types.
       StartArray => todo!(),
@@ -95,7 +95,7 @@ impl Sender<Event<serde_json::Value>> for ValueSender {
 
   // Here's where we actually do something with the json event
   // That is, decouple the handling of the parse events, from the actual parsing stream.
-  fn send<'a>(&mut self, ev: &'a Event<serde_json::Value>) -> Result<(), Self::SendError> {
+  fn send<'a>(&mut self, ev: Box<Event<serde_json::Value>>) -> Result<(), Self::SendError> {
     Ok(println!("sent {ev:?}"))
   }
 }

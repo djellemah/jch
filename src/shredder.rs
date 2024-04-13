@@ -136,7 +136,7 @@ impl ShredWriter<&[u8]>
 impl Sender<Event<&[u8]>> for ShredWriter<&[u8]> {
   type SendError = ();
 
-  fn send<'a>(&mut self, ev: &'a Event<&'a [u8]>) -> Result<(), Self::SendError> {
+  fn send<'a>(&mut self, ev: Box<Event<&'a [u8]>>) -> Result<(), Self::SendError> {
     Ok(self.write_msgpack_value(&ev))
   }
 }
@@ -144,7 +144,7 @@ impl Sender<Event<&[u8]>> for ShredWriter<&[u8]> {
 impl Sender<Event<&Vec<u8>>> for ShredWriter<&Vec<u8>> {
   type SendError = ();
 
-  fn send<'a>(&mut self, ev: &'a Event<&Vec<u8>>) -> Result<(), Self::SendError> {
+  fn send<'a>(&mut self, ev: Box<Event<&Vec<u8>>>) -> Result<(), Self::SendError> {
     Ok(self.write_msgpack_value(&ev))
   }
 }
@@ -152,7 +152,7 @@ impl Sender<Event<&Vec<u8>>> for ShredWriter<&Vec<u8>> {
 impl Sender<Event<Vec<u8>>> for ShredWriter<Vec<u8>> {
   type SendError = ();
 
-  fn send<'a>(&mut self, ev: &'a Event<Vec<u8>>) -> Result<(), Self::SendError> {
+  fn send<'a>(&mut self, ev: Box<Event<Vec<u8>>>) -> Result<(), Self::SendError> {
     Ok(self.write_msgpack_value(&ev))
   }
 }
@@ -254,7 +254,7 @@ impl Handler for MsgPacker {
     if !self.match_path(&path) { return Ok(()) }
     let mut buf = vec![];
     let send_event = Self::encode_to_msgpack(path, ev, &mut buf);
-    if let Err(_msg) = tx.send(&send_event) {
+    if let Err(_msg) = tx.send(Box::new(send_event)) {
       // TODO Sender::Event::<V> does not implement Display or Debug so we can't use it here.
       panic!("could not send event {ev:?}");
     }

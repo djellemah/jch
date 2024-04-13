@@ -16,7 +16,7 @@ impl Handler for Plain
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
     if self.match_path(path) {
-      match tx.send(&Event::Value(path.into(), ())) {
+      match tx.send(Box::new(Event::Value(path.into(), ()))) {
         Ok(()) => println!("{path}"),
         Err(_err) => println!("err"),
     }
@@ -36,7 +36,7 @@ impl Sender<Event<()>> for Plain {
 
   // Here's where we actually do something with the json event
   // That is, decouple the handling of the parse events, from the actual parsing stream.
-  fn send<'a>(&mut self, ev: &'a Event<()>) -> Result<(), Self::SendError> {
+  fn send<'a>(&mut self, ev: Box<Event<()>>) -> Result<(), Self::SendError> {
     Ok(println!("sent {ev:?}", ))
   }
 }

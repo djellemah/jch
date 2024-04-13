@@ -16,5 +16,5 @@ pub enum Event<V> {
 // This can be anything from a function call to a channel.
 pub trait Sender<Event> {
   type SendError;
-  fn send<'a>(&mut self, ev: &'a Event) -> Result<(), Self::SendError>;
+  fn send<'a>(&mut self, ev: Box<Event>) -> Result<(), Self::SendError>;
 }
