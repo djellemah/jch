@@ -2,7 +2,7 @@ use crate::jsonpath::JsonPath;
 use crate::sender::Sender;
 use crate::sender::Event;
 
-pub struct ChSender<T>(std::sync::mpsc::SyncSender<Event<T>>);
+pub struct ChSender<T>(pub std::sync::mpsc::SyncSender<Event<T>>);
 
 impl<T : Clone> Sender<Event<T>> for ChSender<T> {
   type SendError=std::sync::mpsc::SendError<Event<T>>;
