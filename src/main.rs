@@ -3,6 +3,8 @@ mod handler;
 mod shredder;
 mod sendpath;
 mod parser;
+mod plain;
+mod schema;
 
 use crate::parser::StrCon;
 use crate::parser::JsonEvents;
@@ -85,7 +87,6 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
   }
 }
 
-mod schema;
 
 fn main() {
   let args : Vec<String> = std::env::args().collect();
@@ -95,6 +96,21 @@ fn main() {
       let istream = make_readable(rst);
       let mut jev = JsonEvents::new(istream);
       schema::schema(&mut jev);
+    }
+    ["-p", rst @ ..] => {
+      let istream = make_readable(rst);
+      let mut jev = JsonEvents::new(istream);
+
+      // kinda weird that two instances are needed. But mut and non-mut.
+      let mut plain_sender = plain::Plain;
+      let plain_handler = plain::Plain;
+
+      use handler::Handler;
+      match plain_handler.value(&mut jev, JsonPath::new(), 0, &mut plain_sender) {
+        Ok(()) => println!("Done"),
+        Err(err) => { eprintln!("ending event reading because {err:?}") },
+      }
+
     }
     ["-z"] => schema::sizes(),
     ["-h"] => println!("-z file for sizes, -s file for schema"),
