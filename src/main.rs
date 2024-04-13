@@ -105,6 +105,7 @@ fn main() {
       let mut jev = JsonEvents::new(istream);
 
       // kinda weird that two instances are needed. But mut and non-mut.
+      // TODO there must be some way to do this.
       let mut plain_sender = plain::Plain;
       let plain_handler = plain::Plain;
 
@@ -114,6 +115,18 @@ fn main() {
         Err(err) => { eprintln!("ending event reading because {err:?}") },
       }
 
+    }
+    ["-v", rst @ ..] => {
+      let istream = make_readable(rst);
+      let mut jev = JsonEvents::new(istream);
+
+      // accept all paths
+      let valuer = valuer::Valuer(|_path| true);
+      // just print them out
+      let mut sender = valuer::ValueSender;
+      // go and doit
+      use handler::Handler;
+      valuer.value(&mut jev, JsonPath::new(), 0, &mut sender).unwrap_or_else(|_| println!("uhoh"))
     }
     ["-z"] => schema::sizes(),
     ["-h"] => println!("-z file for sizes, -s file for schema"),

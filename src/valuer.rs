@@ -33,7 +33,7 @@ macro_rules! package {
   };
 }
 
-pub struct Valuer(fn(&JsonPath) -> bool);
+pub struct Valuer(pub fn(&JsonPath) -> bool);
 
 impl Handler for Valuer
 {
@@ -86,5 +86,17 @@ impl Handler for Valuer
       },
       _ => todo!(),
     }
+  }
+}
+
+pub struct ValueSender;
+
+impl Sender<Event<serde_json::Value>> for ValueSender {
+  type SendError = ();
+
+  // Here's where we actually do something with the json event
+  // That is, decouple the handling of the parse events, from the actual parsing stream.
+  fn send<'a>(&mut self, ev: &'a Event<serde_json::Value>) -> Result<(), Self::SendError> {
+    Ok(println!("sent {ev:?}"))
   }
 }
