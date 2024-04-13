@@ -7,6 +7,7 @@ mod handler;
 mod plain;
 mod shredder;
 mod schema;
+mod valuer;
 
 use crate::parser::StrCon;
 use crate::parser::JsonEvents;
