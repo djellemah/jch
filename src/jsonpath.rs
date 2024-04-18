@@ -1,15 +1,17 @@
-// This is a json path, ie an ordered set of steps,
-// where each step is either a key name or an index.
-// It must be optimised for add/remove the last element,
-// and cloning should be cheap.
-//
-// rpds::Vector meets those requirements.
+/// This is a json path, ie an ordered set of steps,
+/// where each step is either a key name or an index.
+/// It must be optimised for add/remove the last element,
+/// and cloning should be cheap.
+///
+/// rpds::Vector meets those requirements.
 
-// highly unlikely the number of elements in a json array will exceed
-// 2^64 ie 18,446,744,073,709,551,616
+/// The type for Index elements of a json path.
+///
+/// Highly unlikely the number of elements in a json array will exceed
+/// 2^64 ie 18,446,744,073,709,551,616
 type IndexInteger = u64;
 
-// One step in the path, which is either a tag name, or an integer index.
+/// One step in the path, which is either a tag name, or an integer index.
 #[derive(Debug,Clone,Ord,PartialEq,Eq,PartialOrd)]
 pub enum Step {
   Key(String),

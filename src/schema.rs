@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use crate::handler::Handler;
 use crate::Sender;
 use crate::JsonPath;
@@ -19,9 +21,9 @@ impl PartialEq for NumberType {
   fn eq(&self, rhs: &NumberType) -> bool {
     match (self, rhs) {
       (NumberType::Unsigned(a), NumberType::Unsigned(b)) => a == b,
-      (NumberType::Signed(ax, an), NumberType::Signed(bx, bn)) => ax == bx && an == bn,
-      (NumberType::Float(ax, an), NumberType::Float(bx, bn)) => ax == bx && an == bn,
-        _ => false
+      (NumberType::Signed(an, ax), NumberType::Signed(bn, bx)) => an == bn && ax == bx,
+      (NumberType::Float(an, ax), NumberType::Float(bn, bx)) => an == bn && ax == bx,
+       _ => false
     }
   }
 }
@@ -32,12 +34,12 @@ impl std::hash::Hash for NumberType {
   fn hash<H>(&self, hsh: &mut H) where H: std::hash::Hasher {
     match self {
       NumberType::Unsigned(n) => hsh.write_u64(*n),
-      NumberType::Signed(nx, nn) => { hsh.write_i64(*nx); hsh.write_i64(*nn) },
-      NumberType::Float(nx, nn) => {
-        let xbytes : [u8 ; 8] = unsafe { std::mem::transmute(nx) };
+      NumberType::Signed(nn, nx) => { hsh.write_i64(*nn); hsh.write_i64(*nx) },
+      NumberType::Float(nn, nx) => {
         let nbytes : [u8 ; 8] = unsafe { std::mem::transmute(nn) };
-        hsh.write(&xbytes);
-        hsh.write(&nbytes)
+        let xbytes : [u8 ; 8] = unsafe { std::mem::transmute(nx) };
+        hsh.write(&nbytes);
+        hsh.write(&xbytes)
       },
     }
   }
@@ -54,17 +56,16 @@ pub enum SchemaType {
 }
 
 #[derive(Debug,Clone,Eq,PartialEq)]
-#[allow(dead_code)]
 struct Leaf {
   kind : SchemaType,
-  count : std::cell::RefCell<u64>,
+  count : RefCell<u64>,
   // min/max length etc go here
-  aggregate : std::cell::RefCell<SchemaType>,
+  aggregate : RefCell<SchemaType>,
 }
 
 impl Leaf {
   fn new(kind : SchemaType) -> Self {
-    Self{ kind: kind.clone(), count: std::cell::RefCell::new(1), aggregate: std::cell::RefCell::new(kind.clone())}
+    Self{ kind: kind.clone(), count: RefCell::new(1), aggregate: RefCell::new(kind.clone())}
   }
 }
 
@@ -112,9 +113,9 @@ impl std::fmt::Display for SchemaPath {
 
 type LeafPaths = std::collections::BTreeMap<SchemaPath, std::collections::HashSet<Leaf>>;
 
-pub struct SchemaCalculator();
+pub struct EventConverter();
 
-impl SchemaCalculator {
+impl EventConverter {
   pub fn new() -> Self {Self()}
 
   fn collect_type<'a>(&self, _path : &JsonPath, ev : &json_event_parser::JsonEvent)
@@ -122,6 +123,7 @@ impl SchemaCalculator {
   {
     use json_event_parser::JsonEvent;
 
+    // So the big question is: should this translation happen: in the parser thread; or in the processor thread?
     match ev {
       &JsonEvent::String(v) => {
         if v == "NaN" {
@@ -138,15 +140,12 @@ impl SchemaCalculator {
         };
 
         if number_value.is_u64() {
-          // TODO 0 must calculate max
           let n = number_value.as_u64().unwrap();
           SchemaType::Number(NumberType::Unsigned(n))
         } else if number_value.is_i64() {
-          // TODO 0 must calculate max
           let i = number_value.as_i64().unwrap();
           SchemaType::Number(NumberType::Signed(i,i))
         } else if number_value.is_f64() {
-          // TODO 0 must calculate max
           let f = number_value.as_f64().unwrap();
           SchemaType::Number(NumberType::Float(f,f))
         } else {
@@ -154,28 +153,21 @@ impl SchemaCalculator {
         }
       }
 
-      &JsonEvent::Boolean(_v) => {
-        SchemaType::Boolean
-      }
-
-      JsonEvent::Null => {
-        SchemaType::Null
-      }
-
+      &JsonEvent::Boolean(_v) => SchemaType::Boolean,
+      &JsonEvent::Null => SchemaType::Null,
       ev => SchemaType::Unknown(format!("{ev:?}")),
     }
   }
 }
 
-impl Handler for SchemaCalculator {
+impl Handler for EventConverter {
   type V<'l> = SchemaType;
 
   // collect all paths
   fn match_path(&self, _json_path : &JsonPath) -> bool {true}
 
-  // encode values as MessagePack, then send to shredder
   fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
-  -> Result<(),<Snd as Sender<Event<<SchemaCalculator as Handler>::V<'_>>>>::SendError>
+  -> Result<(),<Snd as Sender<Event<<EventConverter as Handler>::V<'_>>>>::SendError>
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
@@ -188,8 +180,6 @@ impl Handler for SchemaCalculator {
   }
 }
 
-// empty struct
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct SchemaCollector {
   leaf_paths : LeafPaths
@@ -308,7 +298,7 @@ pub fn schema(jev : &mut crate::JsonEvents) {
   let mut collector = SchemaCollector::new();
 
   // translate start/end streaming events to leaf types
-  let visitor = SchemaCalculator::new();
+  let visitor = EventConverter::new();
 
   match visitor.value(jev, JsonPath::new(), 0, &mut collector ) {
     Ok(()) => println!("{collector}"),

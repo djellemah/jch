@@ -1,3 +1,6 @@
+# zerocopy
+https://crates.io/crates/zerocopy
+
 # SIMD json
 https://github.com/simdjson/simdjson
 
@@ -7,6 +10,12 @@ https://github.com/simdjson/simdjson/issues/1361
 BUT their context-blindness issue can be solved with a path. Like I'm doing.
 
 And one could hash the path if a flat data-address-space was preferred.
+
+# other streaming parsers
+json-stream by alexmaco is mostly dead
+
+Struson seems alive, but uses a fn for parsing elements of arrays, so would need a coroutine to invert that.
+https://github.com/marcono1234/struson
 
 # Large sample json files
 Some seriously big data here, finally. But take a wild guess which ones are large.

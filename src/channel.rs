@@ -16,11 +16,9 @@ impl<T : Clone> Sender<Event<T>> for ChSender<T> {
 
 // T = serde_json::Value, for example
 pub fn channels(jev : &mut super::JsonEvents) {
-  // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(4096);
   // this seems to be about optimal wrt performance
-  let (tx, rx) = std::sync::mpsc::sync_channel::<Event<serde_json::Value>>(8192);
-  // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(16384);
-  // let (tx, rx) = std::sync::mpsc::sync_channel::<Event>(32768);
+  const CHANNEL_SIZE : usize = 8192;
+  let (tx, rx) = std::sync::mpsc::sync_channel::<Event<serde_json::Value>>(CHANNEL_SIZE);
 
   // consumer thread
   let cons_thr = std::thread::spawn(move || {

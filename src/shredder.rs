@@ -1,5 +1,6 @@
 // write each leaf value to a separate file for its path
-// a la the Shredder algorithm in Dremel paper
+// a la the Shredder algorithm in Dremel paper.
+// TODO implement the Repetition and Definition Levels
 use crate::handler::Handler;
 use crate::jsonpath::*;
 use crate::sender::*;

@@ -1,4 +1,4 @@
-// Converts incoming JsonEvents to serde_json::Value
+/// Converts incoming JsonEvents to serde_json::Value
 
 use crate::sendpath::SendPath;
 use crate::handler::Handler;
@@ -66,15 +66,12 @@ impl Handler for Valuer
             Ok(n) => n,
             Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
-        // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
         tx.send(Box::new(Event::Value(SendPath::from(path), serde_json::Value::Number(value))))
       }
       Boolean(v) => {
-        // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
         tx.send(Box::new(Event::Value(SendPath::from(path), serde_json::Value::Bool(*v))))
       }
       Null => {
-        // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
         tx.send(Box::new(Event::Value(SendPath::from(path), serde_json::Value::Null)))
       }
       // should never receive these. TODO but that fact should be encoded in types.
