@@ -1,6 +1,6 @@
-/// Write each leaf value to a separate file for its path.
-/// a la the Shredder algorithm in Dremel paper.
-/// TODO implement the Repetition and Definition Levels
+// Write each leaf value to a separate file for its path.
+// a la the Shredder algorithm in Dremel paper.
+// TODO implement the Repetition and Definition Levels
 use crate::parser;
 use crate::handler::Handler;
 use crate::jsonpath::*;
@@ -65,7 +65,6 @@ impl<V> ShredWriter<V>
     if self.files.contains_key(&filename) {
       self.files.get(&filename).unwrap()
     } else {
-      eprintln!("new filename {filename:?}");
       let file = std::fs::File::create(&filename).unwrap();
       // by definition this is a None
       if let Some(_) = self.files.insert(filename.clone(), file) {
@@ -78,10 +77,10 @@ impl<V> ShredWriter<V>
   }
 }
 
-impl ShredWriter<Vec<u8>>
+impl<'a, V: AsRef<[u8]>> ShredWriter<V>
 {
   // receives events from the streaming parser
-  pub fn write_msgpack_value<'a>(&mut self, ev : &Event<Vec<u8>>)
+  pub fn write_msgpack_value(&mut self, ev : &'a Event<V>)
   {
     match ev {
       Event::Path(_depth,_path) => (),
@@ -89,7 +88,7 @@ impl ShredWriter<Vec<u8>>
       {
         let mut file = self.find_or_create(send_path);
         use std::io::Write;
-        file.write_all(&v).unwrap();
+        file.write_all(v.as_ref()).unwrap();
       },
       Event::Finished => (),
       &Event::Error(_) => todo!(),
@@ -97,64 +96,10 @@ impl ShredWriter<Vec<u8>>
   }
 }
 
-impl ShredWriter<&Vec<u8>>
-{
-  // receives events from the streaming parser
-  pub fn write_msgpack_value<'a>(&mut self, ev : &Event<&Vec<u8>>)
-  {
-    match ev {
-      Event::Path(_depth,_path) => (),
-      Event::Value(send_path,v) =>
-      {
-        let mut file = self.find_or_create(send_path);
-        use std::io::Write;
-        file.write_all(&v).unwrap();
-      },
-      Event::Finished => (),
-      &Event::Error(_) => todo!(),
-    }
-  }
-}
-
-impl ShredWriter<&[u8]>
-{
-  // receives events from the streaming parser
-  fn write_msgpack_value<'a>(&mut self, ev : &Event<&[u8]>)
-  {
-    match ev {
-      Event::Path(_depth,_path) => (),
-      Event::Value(send_path,v) =>
-      {
-        let mut file = self.find_or_create(send_path);
-        use std::io::Write;
-        file.write_all(&v).unwrap();
-      },
-      Event::Finished => (),
-      &Event::Error(_) => todo!(),
-    }
-  }
-}
-
-impl Sender<Event<&[u8]>> for ShredWriter<&[u8]> {
+impl<V : AsRef<[u8]>> Sender<Event<V>> for ShredWriter<V> {
   type SendError = ();
 
-  fn send<'a>(&mut self, ev: Box<Event<&'a [u8]>>) -> Result<(), Self::SendError> {
-    Ok(self.write_msgpack_value(&ev))
-  }
-}
-
-impl Sender<Event<&Vec<u8>>> for ShredWriter<&Vec<u8>> {
-  type SendError = ();
-
-  fn send<'a>(&mut self, ev: Box<Event<&Vec<u8>>>) -> Result<(), Self::SendError> {
-    Ok(self.write_msgpack_value(&ev))
-  }
-}
-
-impl Sender<Event<Vec<u8>>> for ShredWriter<Vec<u8>> {
-  type SendError = ();
-
-  fn send<'a>(&mut self, ev: Box<Event<Vec<u8>>>) -> Result<(), Self::SendError> {
+  fn send(&mut self, ev: Box<Event<V>>) -> Result<(), Self::SendError> {
     Ok(self.write_msgpack_value(&ev))
   }
 }
@@ -166,14 +111,15 @@ impl MsgPacker {
     Self()
   }
 
-  fn encode_to_msgpack<'a>(path : &JsonPath, ev : &json_event_parser::JsonEvent, buf : &'a mut Vec<u8>)
-  -> Event<&'a Vec<u8>>
+  fn encode_to_msgpack(path : &JsonPath, ev : &json_event_parser::JsonEvent)
+  -> Event<Vec<u8>>
   {
     use json_event_parser::JsonEvent::*;
+    let mut buf = vec![];
 
     match ev {
       &String(v) => {
-        match rmp::encode::write_str(buf, &v) {
+        match rmp::encode::write_str(&mut buf, &v) {
           Ok(()) => Event::Value(SendPath::from(path),buf),
           Err(err) => panic!("msgpack error {err}"),
         }
@@ -185,22 +131,22 @@ impl MsgPacker {
           Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
 
-        // NOTE trying to wrap this in a Result instead of panic! causes trouble
+        // TODO trying to wrap this in a Result instead of panic! causes trouble
         // because Event<&'a mut Vec<u8>? is not coerceable to Event<&'a Vec<u8>>
         // despite coercion rules ¯\_(/")_/¯
         // So Event enum then needs the Error(_) item
         if number_value.is_u64() {
-          match rmp::encode::write_uint(buf, number_value.as_u64().unwrap()) {
+          match rmp::encode::write_uint(&mut buf, number_value.as_u64().unwrap()) {
             Ok(_) => Event::Value(SendPath::from(path), buf),
             Err(err) => Event::Error(format!("{err:?}")),
           }
         } else if number_value.is_i64() {
-          match rmp::encode::write_sint(buf, number_value.as_i64().unwrap()) {
+          match rmp::encode::write_sint(&mut buf, number_value.as_i64().unwrap()) {
             Ok(_) => Event::Value(SendPath::from(path), buf),
             Err(err) => Event::Error(format!("{err:?}")),
           }
         } else if number_value.is_f64() {
-          match rmp::encode::write_f64(buf, number_value.as_f64().unwrap()) {
+          match rmp::encode::write_f64(&mut buf, number_value.as_f64().unwrap()) {
             Ok(()) => Event::Value(SendPath::from(path), buf),
             Err(err) => Event::Error(format!("{err:?}")),
           }
@@ -210,14 +156,14 @@ impl MsgPacker {
       }
 
       &Boolean(v) => {
-        match rmp::encode::write_bool(buf, v) {
+        match rmp::encode::write_bool(&mut buf, v) {
           Ok(()) => Event::Value(SendPath::from(path), buf),
           Err(err) => panic!("msgpack error {err}"),
         }
       }
 
       Null => {
-        match rmp::encode::write_nil(buf) {
+        match rmp::encode::write_nil(&mut buf) {
           Ok(()) => Event::Value(SendPath::from(path), buf),
           Err(err) => panic!("msgpack error {err}"),
         }
@@ -232,19 +178,11 @@ impl Handler for MsgPacker {
   // V is the type of the data that Event contains
   // TODO both of this work with only the need to borrow buf or not.
   // type V<'l> = &'l[u8];
-  type V<'l> = &'l Vec<u8>;
+  type V<'l> = Vec<u8>;
 
   // filters events from the streaming parser
-  fn match_path(&self, json_path : &JsonPath) -> bool {
-    // need the &Step ref for nicer matching below
-    let json_path = json_path.iter().collect::<Vec<&Step>>();
-
-    // This is pretty horrible. Maybe a DSL would be nicer.
-    match &json_path[..] {
-      // ie images/xxx
-      [&Step::Key(ref v), &Step::Index(ref _index), &Step::Key(ref _leaf_name)] => &v[..] == "images",
-      _ => false
-    }
+  fn match_path(&self, _json_path : &JsonPath) -> bool {
+    true
   }
 
   // encode values as MessagePack, then send to shredder
@@ -254,8 +192,7 @@ impl Handler for MsgPacker {
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
     if !self.match_path(&path) { return Ok(()) }
-    let mut buf = vec![];
-    let send_event = Self::encode_to_msgpack(path, ev, &mut buf);
+    let send_event = Self::encode_to_msgpack(path, ev);
     if let Err(_msg) = tx.send(Box::new(send_event)) {
       // TODO Sender::Event::<V> does not implement Display or Debug so we can't use it here.
       panic!("could not send event {ev:?}");
