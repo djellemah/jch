@@ -75,7 +75,7 @@ dependencies = [
 [[package]]
 name = "json-event-parser"
 version = "0.1.1"
-source = "git+https://github.com/oxigraph/json-event-parser.git?branch=pub-reader#bb6c69db6517d59db09a7699f2d37d8b6006518a"
+source = "git+https://github.com/djellemah/json-event-parser.git#bb6c69db6517d59db09a7699f2d37d8b6006518a"
 
 [[package]]
 name = "num-traits"
