@@ -1,0 +1,68 @@
+name: build release packages on os
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags: v*
+  pull_request: {}
+
+# https://cli.github.com/manual/gh_release
+# https://docs.github.com/en/actions/using-workflows/using-github-cli-in-workflows
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: gh create release
+      run: |
+        gh release delete ${{ github.ref_name }} --yes
+        gh release create --latest ${{ github.ref_name }}
+      env:
+        GH_TOKEN: ${{ secrets.ACTION_TOKEN }}
+
+    #  apparently you can't remove  v0.1.0.tar.gz and v0.1.0.zip source archives
+    # - name: gh remove sources
+      # run: |
+        # gh release delete-asset ${{ github.ref_name }} ${{ github.ref_name }}.zip --yes
+        # gh release delete-asset ${{ github.ref_name }} ${{ github.ref_name }}.tar.gz --yes
+      # env:
+        # GH_TOKEN: ${{ secrets.ACTION_TOKEN }}
+
+  release:
+    needs: create-release
+    name: build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - target: x86_64-pc-windows-gnu
+          runs-on: windows-latest
+        # - target: x86_64-unknown-linux-musl
+        #   runs-on: ubuntu-latest
+        - target: x86_64-unknown-linux-gnu
+          runs-on: ubuntu-latest
+        - target: x86_64-apple-darwin
+          runs-on: macos-latest
+
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: compile
+      run: cargo build --release
+
+    - name: upload bin to release
+      if: ${{ runner.os != 'Windows' }}
+      run: |
+        cp target/release/jch jch-${{ matrix.target }}-${{ github.ref_name}}
+        gh release upload ${{ github.ref_name}} jch-${{ matrix.target }}-${{ github.ref_name}}
+      env:
+        GH_TOKEN: ${{ secrets.ACTION_TOKEN }}
+
+    # also handle windows .exe files
+    - name: upload exe to release
+      if: ${{ runner.os == 'Windows' }}
+      run: |
+        cp target/release/jch.exe jch-${{ matrix.target }}-${{ github.ref_name}}.exe
+        gh release upload ${{ github.ref_name}} jch-${{ matrix.target }}-${{ github.ref_name}}.exe
+      env:
+        GH_TOKEN: ${{ secrets.ACTION_TOKEN }}
