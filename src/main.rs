@@ -1,12 +1,12 @@
-use cln::plain;
-use cln::valuer;
-use cln::channel;
-use cln::shredder;
-use cln::parser;
-use cln::jsonpath;
-use cln::schema;
-use cln::handler;
-use cln::fn_snd;
+use jch::plain;
+use jch::valuer;
+use jch::channel;
+use jch::shredder;
+use jch::parser;
+use jch::jsonpath;
+use jch::schema;
+use jch::handler;
+use jch::fn_snd;
 
 use std::process::exit;
 
@@ -19,13 +19,13 @@ fn main() {
   match &args[1..] {
     ["-s", "-z"] => schema::sizes(&mut std::io::stdout()).unwrap(),
     ["-s", rst @ ..] => {
-      let istream = cln::make_readable(rst);
+      let istream = jch::make_readable(rst);
       let mut jevstream = parser::JsonEvents::new(istream);
       schema::schema(&mut jevstream);
     }
     // This are POC to see that the rest of the handlers and visitors work.
     ["-p", rst @ ..] => {
-      let istream = cln::make_readable(rst);
+      let istream = jch::make_readable(rst);
       let mut jevstream = parser::JsonEvents::new(istream);
 
       // just use a (mostly) simple function wrapper
@@ -40,7 +40,7 @@ fn main() {
         .unwrap_or_else(|err| eprintln!("ending event reading because {err:?}"));
     }
     ["-v", rst @ ..] => {
-      let istream = cln::make_readable(rst);
+      let istream = jch::make_readable(rst);
       let mut jevstream = parser::JsonEvents::new(istream);
 
       // accept all paths, and convert leafs to serde_json::Value
@@ -55,7 +55,7 @@ fn main() {
         .unwrap_or_else(|err| {eprintln!("ending event reading because {err:?}"); exit(1)})
     }
     ["-c", rst @ ..] => {
-      let istream = cln::make_readable(rst);
+      let istream = jch::make_readable(rst);
       let mut jevstream = parser::JsonEvents::new(istream);
       // producer reads file and converts to serde_json events, consumer just receives them.
       channel::channels(&mut jevstream)
