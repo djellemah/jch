@@ -1,6 +1,24 @@
+pub struct JsonCounter(countio::Counter<Box<dyn std::io::BufRead>>);
+
+impl std::io::Read for JsonCounter {
+  fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    self.0.read(buf)
+  }
+}
+
+impl std::io::BufRead for JsonCounter {
+  fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+    self.0.fill_buf()
+  }
+
+  fn consume(&mut self, amt: usize) {
+    self.0.consume(amt)
+  }
+}
+
 // Source of Json parse events, ie the json parser
 pub struct JsonEvents {
-  reader : json_event_parser::JsonReader<Box<countio::Counter<Box<dyn std::io::BufRead>>>>,
+  reader : json_event_parser::JsonReader<JsonCounter>,
   _buf : Vec<u8>,
 }
 
@@ -11,8 +29,9 @@ macro_rules! eventicize {
       Ok(json_event_parser::JsonEvent::Eof) => None,
       Ok(jev) => Some(jev),
       Err(err) => {
-        let counter = &$obj.reader.reader as &countio::Counter<Box<dyn std::io::BufRead>>;
-        let pos = counter.reader_bytes();
+        // this requires a hack in json_event_parser
+        let counter : &JsonCounter = &$obj.reader.reader;
+        let pos = counter.0.reader_bytes();
         // try to generate some surrounding json context for the error message
         let mut buf = [0; 80];
         use std::io::Read;
@@ -32,12 +51,9 @@ macro_rules! eventicize {
 
 impl JsonEvents {
   pub fn new(istream : Box<dyn std::io::BufRead>) -> Self {
-    let counter = Box::new(countio::Counter::new(istream));
-    // let rcounter = &counter;
+    let counter = JsonCounter(countio::Counter::new(istream));
     let reader = json_event_parser::JsonReader::from_reader(counter);
-    let buf : Vec<u8> = vec![];
-    // Self{reader, counter: rcounter, buf}
-    Self{reader, _buf: buf}
+    Self{reader, _buf: vec![]}
   }
 
   // This is an attempt to use JsonEvents as an iterator.
