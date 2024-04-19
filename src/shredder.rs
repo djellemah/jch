@@ -1,6 +1,7 @@
-// write each leaf value to a separate file for its path
-// a la the Shredder algorithm in Dremel paper.
-// TODO implement the Repetition and Definition Levels
+/// Write each leaf value to a separate file for its path.
+/// a la the Shredder algorithm in Dremel paper.
+/// TODO implement the Repetition and Definition Levels
+use crate::parser;
 use crate::handler::Handler;
 use crate::jsonpath::*;
 use crate::sender::*;
@@ -266,8 +267,8 @@ impl Handler for MsgPacker {
 pub fn shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
 where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 {
-  let istream = cln::make_readable(maybe_readable_args);
-  let mut jevstream = crate::JsonEvents::new(istream);
+  let istream = crate::make_readable(maybe_readable_args);
+  let mut jevstream = parser::JsonEvents::new(istream);
 
   // write events as Dremel-style record shred columns
   let mut writer = crate::shredder::ShredWriter::new(&dir, "mpk");

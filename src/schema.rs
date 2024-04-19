@@ -1,20 +1,10 @@
 use std::cell::RefCell;
 
+use crate::parser::JsonEvents;
 use crate::handler::Handler;
-use crate::Sender;
-use crate::JsonPath;
-use crate::Event;
-
-// tree is a map of path => [(type, count)]
-
-// NOTE this already sortof exists in serde_json with feature arbitrary_precision
-// enum N {
-//     PosInt(u64),
-//     /// Always less than zero.
-//     NegInt(i64),
-//     /// Always finite.
-//     Float(f64),
-// }
+use crate::sender::Sender;
+use crate::jsonpath::JsonPath;
+use crate::sender::Event;
 
 #[derive(Debug,Clone)]
 pub enum NumberType {
@@ -208,8 +198,8 @@ impl SchemaCollector {
             // replace all indexes in path with generic placeholder. Because we
             // want the schema not the full tree.
             match step {
-              crate::Step::Key(v) => Step::Key(v.clone()),
-              crate::Step::Index(_) => Step::Index,
+              crate::jsonpath::Step::Key(v) => Step::Key(v.clone()),
+              crate::jsonpath::Step::Index(_) => Step::Index,
             }
           }).collect::<Vec<Step>>();
           let path = SchemaPath(path);
@@ -306,7 +296,7 @@ impl Sender<Event<SchemaType>> for SchemaCollector {
   }
 }
 
-pub fn schema(jev : &mut crate::JsonEvents) {
+pub fn schema(jev : &mut JsonEvents) {
   // collect and display schema of input
   let mut collector = SchemaCollector::new();
 
@@ -319,7 +309,14 @@ pub fn schema(jev : &mut crate::JsonEvents) {
   }
 }
 
-pub fn sizes() {
-  println!("SchemaType {}", std::mem::size_of::<SchemaType>());
-  println!("Leaf {}", std::mem::size_of::<Leaf>());
+pub fn sizes(wr : &mut dyn std::io::Write) -> std::io::Result<()> {
+  writeln!(wr, "jsonpath::Step {}", std::mem::size_of::<crate::jsonpath::Step>())?;
+  writeln!(wr, "jsonpath::JsonPath {}", std::mem::size_of::<crate::jsonpath::JsonPath>())?;
+  writeln!(wr, "sender::Event<Vec<u8>> {}", std::mem::size_of::<crate::sender::Event<Vec<u8>>>())?;
+  writeln!(wr, "sender::Event<&Vec<u8>> {}", std::mem::size_of::<crate::sender::Event<&Vec<u8>>>())?;
+  writeln!(wr, "sender::Event<u8> {}", std::mem::size_of::<crate::sender::Event<u8>>())?;
+  writeln!(wr, "sender::Event<&u8> {}", std::mem::size_of::<crate::sender::Event<&u8>>())?;
+  writeln!(wr, "schema::SchemaType {}", std::mem::size_of::<crate::schema::SchemaType>())?;
+  writeln!(wr, "schema::Leaf {}", std::mem::size_of::<crate::schema::Leaf>())?;
+  Ok(())
 }

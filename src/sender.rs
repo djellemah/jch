@@ -7,7 +7,9 @@ use crate::sendpath::SendPath;
 #[allow(dead_code)]
 #[derive(Debug,Clone)]
 pub enum Event<V> {
+  // depth and path
   Path(u64,SendPath),
+  // path with the value at that path
   Value(SendPath,V),
   Finished,
   Error(String),

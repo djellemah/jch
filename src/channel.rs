@@ -1,3 +1,4 @@
+use crate::parser::JsonEvents;
 use crate::jsonpath::JsonPath;
 use crate::sender::Sender;
 use crate::sender::Event;
@@ -15,7 +16,7 @@ impl<T : Clone> Sender<Event<T>> for ChSender<T> {
 }
 
 // T = serde_json::Value, for example
-pub fn channels(jev : &mut super::JsonEvents) {
+pub fn channels(jev : &mut JsonEvents) {
   // this seems to be about optimal wrt performance
   const CHANNEL_SIZE : usize = 8192;
   let (tx, rx) = std::sync::mpsc::sync_channel::<Event<serde_json::Value>>(CHANNEL_SIZE);
