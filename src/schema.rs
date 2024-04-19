@@ -111,22 +111,104 @@ impl std::hash::Hash for Leaf {
   }
 }
 
-#[derive(Debug,Clone,Ord,PartialEq,Eq,PartialOrd)]
+const STEP_LENGTH_WORTH_HASHING : usize = 32;
+
+/// Allow for pre-hashing this, since it will be used in many comparisons
+#[derive(Debug,Clone,PartialOrd,Ord,Eq)]
 pub enum Step {
-  Key(String),
+  Key(String,RefCell<Option<u64>>),
   Index,
 }
 
+impl Step {
+  // greedily calculate hash
+  fn key_with_hash(str: &String) -> Step {
+    if str.len() < STEP_LENGTH_WORTH_HASHING {
+      use std::hash::Hash;
+      use std::hash::Hasher;
+      let v = str.clone();
+      let mut hasher = <rustc_hash::FxHasher as std::default::Default>::default();
+      v.hash(&mut hasher);
+      Self::Key(v,RefCell::new(Some(hasher.finish())))
+    } else {
+      Self::Key(str.into(),RefCell::new(None))
+    }
+  }
+
+  // Don't calculate a hash
+  #[allow(dead_code)]
+  fn key(str: &String) -> Step {
+    Self::Key(str.clone(),RefCell::new(None))
+  }
+
+  // calculate hash lazily
+  fn maybe_cache_hash(&self) -> u64 {
+    match self {
+      Self::Index => 0u64, // TODO what other value should be used here?
+      Self::Key(v,hashref) => {
+        let maybe_hash = *hashref.borrow();
+        if let Some(hashv) = maybe_hash {
+          hashv
+        } else {
+          use std::hash::Hash;
+          use std::hash::Hasher;
+          let mut hasher = <rustc_hash::FxHasher as std::default::Default>::default();
+          v.hash(&mut hasher);
+          let hashv = hasher.finish();
+          hashref.replace(Some(hashv));
+          hashv
+        }
+      }
+    }
+  }
+}
+
+impl std::cmp::PartialEq for Step {
+  fn eq(&self, other: &Self) -> bool {
+    use Step::*;
+    match (self,other) {
+      (Index, Index) => true,
+      (Index, Key(_,_)) => false,
+      (Key(_,_), Index) => false,
+      (Key(_sv,shash_cell),Key(_ov,ohash_cell)) => {
+        // definitely makes a difference to restrict hash calculation to shorter strings.
+        // There must be some proper inflection point where the probability of longer strings
+        // being equal outweighs the probably that calculating the hash upfront will be faster.
+        if _sv.len() == _ov.len() && _sv.len() < STEP_LENGTH_WORTH_HASHING {
+          match (*shash_cell.borrow(), *ohash_cell.borrow()) {
+            ( None ,  None) => self.maybe_cache_hash() == other.maybe_cache_hash(),
+            ( Some(shash),  Some(ohash)) => shash == ohash,
+            ( Some(shash),  None) => shash == other.maybe_cache_hash(),
+            ( None,  Some(ohash)) => self.maybe_cache_hash() == ohash,
+          }
+        } else {
+          // assuming that the String PartialEq will check length first
+          _sv == _ov
+        }
+      }
+    }
+  }
+}
+
+
+impl std::hash::Hash for Step {
+  /// Delegate to the RefCell hash if possible
+  fn hash<H>(&self, hsh: &mut H) where H: std::hash::Hasher {
+    // yes, we're hashing a hash here.
+    hsh.write_u64(self.maybe_cache_hash())
+  }
+}
 impl std::fmt::Display for Step {
   fn fmt(&self, f : &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     match &self {
-      Step::Key(v) => write!(f, "{v}"),
+      Step::Key(v, _) => write!(f, "{v}"),
       Step::Index => write!(f, "[]"),
     }
   }
 }
 
-#[derive(Debug,Ord,PartialOrd,Eq,PartialEq)]
+// TODO look at ways to make this immutable and cache its hash
+#[derive(Debug,PartialOrd,Ord,PartialEq,Eq,Hash)]
 struct SchemaPath(Vec<Step>);
 
 impl std::fmt::Display for SchemaPath {
@@ -187,6 +269,7 @@ impl Handler for EventConverter {
   type V<'l> = SchemaType;
 
   // collect all paths
+  #[inline]
   fn match_path(&self, _json_path : &JsonPath) -> bool {true}
 
   fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Snd)
@@ -204,7 +287,7 @@ impl Handler for EventConverter {
 }
 
 type LeafKinds = std::collections::HashSet<Leaf>;
-type LeafPaths = std::collections::BTreeMap<SchemaPath, LeafKinds>;
+type LeafPaths = std::collections::HashMap<SchemaPath, LeafKinds>;
 
 #[derive(Debug)]
 pub struct SchemaCollector {
@@ -225,7 +308,7 @@ impl SchemaCollector {
           // replace all indexes in path with generic placeholder. Because we
           // want the schema not the full tree.
           match step {
-            crate::jsonpath::Step::Key(v) => Step::Key(v.clone()),
+            crate::jsonpath::Step::Key(v) => Step::key_with_hash(v),
             crate::jsonpath::Step::Index(_) => Step::Index,
           }
         }).collect::<Vec<Step>>();
@@ -272,7 +355,6 @@ impl SchemaCollector {
               }
               None => { leaf_kinds.insert(Leaf::new(value_type.clone())); }
             }
-
           },
           None => {
             // There are as yet no leafs for this path, so create a new leaf_kinds structure

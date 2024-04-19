@@ -12,6 +12,7 @@ default-run = "jch"
 
 countio = "*"
 serde_json = "*"
+# see also https://docs.rs/im/latest/im/
 rpds = { version = "1.1", features = ["serde"] }
 archery = "*"
 serde_yaml = "*"
@@ -24,3 +25,4 @@ rmp = "*"
 # json_stream = {version = "*", git = "https://github.com/alexmaco/json_stream"}
 json-event-parser = {version = "0.2.0"}
 crossbeam = "0.8"
+rustc-hash = "1.1.0"
