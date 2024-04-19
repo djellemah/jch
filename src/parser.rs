@@ -1,3 +1,7 @@
+/*!
+The interface to the parser, currently json-event-parser.
+*/
+
 pub struct JsonCounter(countio::Counter<Box<dyn std::io::BufRead>>);
 
 impl std::io::Read for JsonCounter {

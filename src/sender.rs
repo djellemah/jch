@@ -1,6 +1,8 @@
-// The Sender trait.
-// 
-// The Handler will ultimately send this event to an implementation of Sender.
+/*!
+The Sender trait.
+
+The Handler will ultimately send this event to an implementation of Sender.
+*/
 
 use crate::sendpath::SendPath;
 
@@ -15,7 +17,7 @@ pub enum Event<V> {
   Error(String),
 }
 
-// This can be anything from a function call to a channel.
+/// This can be implemented by anything from a function call to a channel.
 pub trait Sender<Event> {
   type SendError;
   fn send<'a>(&mut self, ev: Box<Event>) -> Result<(), Self::SendError>;

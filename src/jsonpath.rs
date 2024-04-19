@@ -1,9 +1,11 @@
-/// This is a json path, ie an ordered set of steps,
-/// where each step is either a key name or an index.
-/// It must be optimised for add/remove the last element,
-/// and cloning should be cheap.
-///
-/// rpds::Vector meets those requirements.
+/*!
+This is a json path, ie an ordered set of steps,
+where each step is either a key name or an index.
+It must be optimised for add/remove the last element,
+and cloning should be cheap.
+
+`rpds::Vector` meets those requirements.
+*/
 
 /// The type for Index elements of a json path.
 ///

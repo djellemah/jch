@@ -1,6 +1,7 @@
-// Basically this implements a JsonPath that's optimised for sending over a
-// channel without excessive copying.
-
+/*!
+This implements a JsonPath that's optimised for sending over a
+channel without excessive copying.
+*/
 use crate::jsonpath::JsonPath;
 use crate::jsonpath::Step;
 
@@ -19,7 +20,8 @@ mod like_jsonpath {
   }
 }
 
-// a tree path as sent by the streaming parser to a handler of some kind, along with its leaf value.
+/// A tree path optimised for sending. Which means we can't in general keep references.
+// TODO implement a reference for sending to functions and other non-channels.
 #[derive(Debug,Clone)]
 pub struct SendPath(pub Vec<Step>);
 

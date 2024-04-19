@@ -1,3 +1,9 @@
+/*!
+One way to view a tree is a map of path => value, or for its schema path => type.
+
+This parses a json document and collects the type for each path, including some basic statistics.
+*/
+
 use std::cell::RefCell;
 
 use crate::parser::JsonEvents;
@@ -6,6 +12,20 @@ use crate::sender::Sender;
 use crate::jsonpath::JsonPath;
 use crate::sender::Event;
 
+/*
+tree is a map of path => [(type, count)]
+
+NOTE this already sortof exists in serde_json with feature arbitrary_precision
+enum N {
+   PosInt(u64),
+   /// Always less than zero.
+   NegInt(i64),
+   /// Always finite.
+   Float(f64),
+}
+*/
+
+/// The various kinds of json number, in numeric format.
 #[derive(Debug,Clone)]
 pub enum NumberType {
   // max

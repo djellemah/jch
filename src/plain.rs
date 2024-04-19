@@ -1,3 +1,7 @@
+/*!
+A really simple visitor that always prints out everything.
+*/
+
 use crate::handler::Handler;
 use crate::jsonpath::JsonPath;
 use crate::sender::Event;

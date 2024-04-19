@@ -1,3 +1,5 @@
+//! Send parse events across a channel, to decouple parsing from handling.
+
 use crate::parser::JsonEvents;
 use crate::jsonpath::JsonPath;
 use crate::sender::Sender;

@@ -1,4 +1,4 @@
-/// Converts incoming JsonEvents to serde_json::Value
+//! Converts incoming JsonEvents to serde_json::Value
 
 use crate::sendpath::SendPath;
 use crate::handler::Handler;

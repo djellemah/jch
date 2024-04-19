@@ -1,6 +1,8 @@
-// Write each leaf value to a separate file for its path.
-// a la the Shredder algorithm in Dremel paper.
-// TODO implement the Repetition and Definition Levels
+/*!
+This writes out a file for each path, where indexes are removed from the path.
+Each file contains all the values from that path, in order.
+*/
+
 use crate::parser;
 use crate::handler::Handler;
 use crate::jsonpath::*;
@@ -53,13 +55,13 @@ impl<V> ShredWriter<V>
     dir.join(filename)
   }
 
-  // find or create a given file for the jsonpath
-  //
-  // Self keeps a hashmap of
-  //
-  // PathBuf => File
-  //
-  // so it doesn't repeatedly reopen the same files.
+  /// find or create a given file for the jsonpath
+  ///
+  /// Self keeps a hashmap of
+  ///
+  /// PathBuf => File
+  ///
+  /// so it doesn't repeatedly reopen the same files.
   fn find_or_create<'a>(&'a mut self, send_path : &crate::sendpath::SendPath) -> &'a std::fs::File {
     let filename = Self::filename_of_path(&self.dir, send_path, &self.ext);
     if self.files.contains_key(&filename) {
@@ -120,7 +122,7 @@ impl MsgPacker {
     match ev {
       &String(v) => {
         match rmp::encode::write_str(&mut buf, &v) {
-          Ok(()) => Event::Value(SendPath::from(path),buf),
+          Ok(()) => Event::Value(SendPath::from(path), buf),
           Err(err) => panic!("msgpack error {err}"),
         }
       }

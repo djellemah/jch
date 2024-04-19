@@ -1,4 +1,4 @@
-/// Mimimal implementation for a Sender to have a function which receives the events.
+//! Mimimal implementation for a Sender to have a function which receives the events.
 use crate::sender::Sender;
 
 // This is a lot of machinery just to call a function :-\

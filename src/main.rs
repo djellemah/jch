@@ -10,6 +10,8 @@ use cln::fn_snd;
 
 use std::process::exit;
 
+/// The most useful thing this does is calculate a Schema for a json file. Really fast.
+/// The rest of it is a showcase and testbed for some of the other things that can be done.
 fn main() {
   // Quick'n'Dirty command line arg dispatch
   let args : Vec<String> = std::env::args().collect();
@@ -21,6 +23,7 @@ fn main() {
       let mut jevstream = parser::JsonEvents::new(istream);
       schema::schema(&mut jevstream);
     }
+    // This are POC to see that the rest of the handlers and visitors work.
     ["-p", rst @ ..] => {
       let istream = cln::make_readable(rst);
       let mut jevstream = parser::JsonEvents::new(istream);

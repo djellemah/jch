@@ -12,6 +12,9 @@ pub mod schema;
 pub mod valuer;
 pub mod channel;
 pub mod fn_snd;
+
+/// The idea here was something like ruby's ARGF, ie stdin and then all command line args that are files.
+/// But currently it only handles either stdin or a single file.
 pub fn make_readable<S>(maybe_readable_args : &[S]) -> Box<dyn std::io::BufRead>
 where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 {
