@@ -7,6 +7,15 @@ use crate::Event;
 
 // tree is a map of path => [(type, count)]
 
+// NOTE this already sortof exists in serde_json with feature arbitrary_precision
+// enum N {
+//     PosInt(u64),
+//     /// Always less than zero.
+//     NegInt(i64),
+//     /// Always finite.
+//     Float(f64),
+// }
+
 #[derive(Debug,Clone)]
 pub enum NumberType {
   // max
@@ -189,49 +198,18 @@ impl SchemaCollector {
   pub fn new() -> Self {
     Self {leaf_paths: LeafPaths::new()}
   }
-}
-
-impl std::fmt::Display for SchemaCollector {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error>
-  {
-    for (p,kinds) in &self.leaf_paths {
-      const WIDTH : usize = 40;
-      // because otherwise 50 width is applied to each element of k
-
-      // kinds is a Set, which doesn't really have a concept of .first()
-      // so just collect the pieces as an iterator.
-      let mut kfmts = kinds
-        .iter()
-        .map(|k| format!("{k:WIDTH$}") )
-        .collect::<Vec<String>>();
-
-      let kfmt = match kinds.len() {
-        0 => String::new(),
-        // no point creating another string here, and first == last
-        1 => kfmts.pop().unwrap(),
-        _ => format!("[{}]", kfmts.join(","))
-      };
-
-      write!(f, "{kfmt:35} {p}\n")?;
-    };
-    Ok(())
-  }
-}
-
-impl Sender<Event<SchemaType>> for SchemaCollector {
-  type SendError = ();
 
   // This is where we aggregate the types from the stream of incoming types
-  fn send<'a>(&mut self, ev: Box<Event<SchemaType>>) -> Result<(), Self::SendError> {
-    match &*ev {
+  fn process_event<'a>(&mut self, ev: &Event<SchemaType>) -> () {
+    match ev {
         Event::Path(_p, _v) => todo!(),
         Event::Value(p, value_type) => {
           let path = p.0.iter().map(|step| {
             // replace all indexes in path with generic placeholder. Because we
             // want the schema not the full tree.
             match step {
-                crate::Step::Key(v) => Step::Key(v.to_string()),
-                crate::Step::Index(_) => Step::Index,
+              crate::Step::Key(v) => Step::Key(v.clone()),
+              crate::Step::Index(_) => Step::Index,
             }
           }).collect::<Vec<Step>>();
           let path = SchemaPath(path);
@@ -289,7 +267,42 @@ impl Sender<Event<SchemaType>> for SchemaCollector {
         Event::Finished => todo!("schema Event::Finished"),
         Event::Error(_) => todo!("schema Event::Error"),
     }
+  }
+}
+
+impl std::fmt::Display for SchemaCollector {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error>
+  {
+    for (p,kinds) in &self.leaf_paths {
+      const WIDTH : usize = 40;
+      // because otherwise 50 width is applied to each element of k
+
+      // kinds is a Set, which doesn't really have a concept of .first()
+      // so just collect the pieces as an iterator.
+      let mut kfmts = kinds
+        .iter()
+        .map(|k| format!("{k:WIDTH$}") )
+        .collect::<Vec<String>>();
+
+      let kfmt = match kinds.len() {
+        0 => String::new(),
+        // no point creating another string here, and first == last
+        1 => kfmts.pop().unwrap(),
+        _ => format!("[{}]", kfmts.join(","))
+      };
+
+      write!(f, "{kfmt:35} {p}\n")?;
+    };
     Ok(())
+  }
+}
+
+impl Sender<Event<SchemaType>> for SchemaCollector {
+  type SendError = ();
+
+  // Fit in with what visitor wants
+  fn send<'a>(&mut self, ev: Box<Event<SchemaType>>) -> Result<(), Self::SendError> {
+    Ok(self.process_event(&ev))
   }
 }
 
