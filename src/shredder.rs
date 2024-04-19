@@ -262,3 +262,21 @@ impl Handler for MsgPacker {
     Ok(())
   }
 }
+
+pub fn shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
+where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
+{
+  let istream = cln::make_readable(maybe_readable_args);
+  let mut jevstream = crate::JsonEvents::new(istream);
+
+  // write events as Dremel-style record shred columns
+  let mut writer = crate::shredder::ShredWriter::new(&dir, "mpk");
+
+  // serialisation format for columns
+  let visitor = MsgPacker::new();
+
+  match visitor.value(&mut jevstream, JsonPath::new(), 0, &mut writer ) {
+    Ok(()) => (),
+    Err(err) => { eprintln!("ending event reading because {err:?}") },
+  }
+}

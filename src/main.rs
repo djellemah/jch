@@ -19,27 +19,6 @@ use crate::sender::Sender;
 use crate::jsonpath::Step;
 use crate::jsonpath::JsonPath;
 
-
-fn shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
-where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
-{
-  let istream = cln::make_readable(maybe_readable_args);
-  let mut jevstream = JsonEvents::new(istream);
-
-  // write events as Dremel-style record shred columns
-  let mut writer = crate::shredder::ShredWriter::new(&dir, "mpk");
-
-  // serialisation format for columns
-  use crate::shredder::MsgPacker;
-  use crate::handler::Handler;
-  let visitor = MsgPacker::new();
-
-  match visitor.value(&mut jevstream, JsonPath::new(), 0, &mut writer ) {
-    Ok(()) => (),
-    Err(err) => { eprintln!("ending event reading because {err:?}") },
-  }
-}
-
 fn main() {
   // Quick'n'Dirty command line arg dispatch
   let args : Vec<String> = std::env::args().collect();
@@ -88,6 +67,8 @@ fn main() {
       channel::channels(&mut jevstream)
     }
     ["-h"] => println!("-z file for sizes, -s file for schema"),
+    [ dir, rst] => shredder::shred(&std::path::PathBuf::from(dir), &[*rst]),
+    [ dir, rst @ ..] => shredder::shred(&std::path::PathBuf::from(dir), rst),
     _ =>  {
       println!("-s [file] for schema\n-p [file] for plain\n-v [file] for valuer\n-c [file] for channel\nTODO resurrect shredder");
       std::process::exit(1)
