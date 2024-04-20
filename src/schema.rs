@@ -97,9 +97,10 @@ impl std::fmt::Display for Leaf {
 }
 
 impl std::hash::Hash for Leaf {
+  /// Hash only the part that will be stable, and since count and aggregate are
+  /// both RefCell, they won't be stable.
   fn hash<H>(&self, hsh: &mut H) where H: std::hash::Hasher {
     self.kind.hash(hsh);
-    self.count.borrow().hash(hsh);
   }
 }
 
