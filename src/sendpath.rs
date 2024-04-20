@@ -33,7 +33,7 @@ impl From<&JsonPath> for SendPath {
   }
 }
 
-// This produces jq-equivalent notation
+/// This produces jq-equivalent notation
 impl std::fmt::Octal for SendPath {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     let string_parts = self.0.iter().map(|step| format!("{step:o}")).collect::<Vec<String>>();
@@ -42,6 +42,7 @@ impl std::fmt::Octal for SendPath {
   }
 }
 
+/// The notation currently in use.
 impl std::fmt::Display for SendPath {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let string_parts = self.0.iter().map(ToString::to_string).collect::<Vec<String>>();

@@ -173,6 +173,7 @@ impl Handler for MsgPacker {
   {
     if !self.match_path(&path) { return Ok(()) }
     let send_event = Self::encode_to_msgpack(path, ev);
+    // OPT must this really be in a box?
     if let Err(_msg) = tx.send(Box::new(send_event)) {
       // TODO Sender::Event::<V> does not implement Display or Debug so we can't use it here.
       panic!("could not send event {ev:?}");
