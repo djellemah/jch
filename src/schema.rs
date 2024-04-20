@@ -253,10 +253,8 @@ impl SchemaCollector {
               // either create a new type, or update the existing type with current counts and values
               match kind_option {
                 Some(kind) => {
-                  // update the max/min and other aggregates here
-
-                  let mut count = kind.count.borrow_mut();
-                  *count += 1;
+                  // increment count
+                  *kind.count.borrow_mut() += 1;
 
                   // update the max/min and other aggregates here
                   // transfer values from value_type (ie the current leaf value) to aggregate (ie in the schema we're building)
