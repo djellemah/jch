@@ -14,6 +14,9 @@ Is designed in a modular way so you can use it as a base for filtering json. Lik
 Might grow some kind of path-filtering languages, like jsonpath or xpath.
 */
 
+// for joining jsonpath into a dot-separated filename
+#![feature(iter_intersperse)]
+
 // parser and traits
 pub mod parser;
 pub mod jsonpath;

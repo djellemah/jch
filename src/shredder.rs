@@ -33,28 +33,6 @@ impl<V> ShredWriter<V>
     }
   }
 
-  // this converts a path in the form images/23423/image_name
-  // to images.image.mpk
-  // which basically means stripping out all Index components
-  //
-  // TODO this is critical path for every single leaf that will be written. So it must be fast.
-  // So probably the best way to do that is to skip the intermediate assignment of
-  // 'steps' and just append directly to the (dir : Pathbuf)
-  fn filename_of_path(dir : &std::path::PathBuf, send_path : &crate::sendpath::SendPath, ext : &String) -> std::path::PathBuf {
-    // probably at least one index will be dropped, but we'll definitely need
-    // space for the extension (ie +1).
-    let mut steps : Vec<&str> = Vec::with_capacity(send_path.0.len() + 1);
-    for step in send_path.0.iter() {
-      if let Step::Key(step) = step { steps.push(step.as_str()) }
-    }
-    // append extension
-    steps.push(ext);
-    // construct the filename
-    let filename = steps.join(".");
-    // append filename to pathname
-    dir.join(filename)
-  }
-
   /// find or create a given file for the jsonpath
   ///
   /// Self keeps a hashmap of
@@ -63,14 +41,14 @@ impl<V> ShredWriter<V>
   ///
   /// so it doesn't repeatedly reopen the same files.
   fn find_or_create<'a>(&'a mut self, send_path : &crate::sendpath::SendPath) -> &'a std::fs::File {
-    let filename = Self::filename_of_path(&self.dir, send_path, &self.ext);
-    if self.files.contains_key(&filename) {
-      self.files.get(&filename).unwrap()
+    let pathname = self.dir.join(&filename_of_path(send_path, &self.ext));
+    if self.files.contains_key(&pathname) {
+      self.files.get(&pathname).unwrap()
     } else {
-      let file = std::fs::File::create(&filename).unwrap();
+      let file = std::fs::File::create(&pathname).unwrap();
       // by definition this is a None
-      if let Some(_) = self.files.insert(filename.clone(), file) {
-        panic!("oops with {filename:?}")
+      if let Some(_) = self.files.insert(pathname.clone(), file) {
+        panic!("oops with {pathname:?}")
       }
       // This only happens the first time the file is created,
       // so the extra lookup has little impact on the normal case.
@@ -218,5 +196,76 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
   match visitor.value(&mut jevstream, JsonPath::new(), 0, &mut writer ) {
     Ok(()) => (),
     Err(err) => { eprintln!("ending event reading because {err:?}") },
+  }
+}
+
+/**
+Converts a path in the form `images/23423/image_name` to
+`images.image_name.mpk`. Which basically means stripping out all Index
+components.
+
+It's on the critical path for every single leaf that will be written. So it must
+be fast. That, along with the need to detect a potentially empty filename, are
+the drivers behind the fancy iterator chain.
+*/
+fn filename_of_path<'a>(send_path : &'a crate::sendpath::SendPath, ext : &'a String) -> std::path::PathBuf {
+  let mut steps = send_path.0.iter().filter_map(|step|
+    if let Step::Key(step) = step {
+      Some(step.as_str())
+    } else {
+      None
+    }
+  );
+
+  // find a sensible default if the path is empty
+  let first_step = match steps.by_ref().nth(0) {
+    Some(v) => v,
+    None => "_",
+  };
+
+  // Build the path as elt1.elt2.elt3.ext, and then convert to return type, ie PathBuf
+  use std::iter::once;
+  once(first_step)
+    .chain(steps)
+    .chain(once(ext.as_str()))
+    .intersperse(".")
+    .collect::<String>()
+    .into()
+}
+
+#[cfg(test)]
+mod test_filename_of_path {
+  use super::*;
+  use std::path::PathBuf;
+
+  #[test]
+  fn normal() {
+    let send_path = SendPath(vec![Step::Index(0), Step::Key("uno".into()), Step::Key("duo".into()), Step::Key("tre".into())]);
+    let ext = "wut";
+    let path = super::filename_of_path(&send_path, &ext.into());
+    assert_eq!(path, PathBuf::from("uno.duo.tre.wut"));
+  }
+
+  #[test]
+  fn empty() {
+    let send_path = SendPath(vec![]);
+    let ext = "wut";
+    let path = super::filename_of_path(&send_path, &ext.into());
+    assert_eq!(path, PathBuf::from("_.wut"));
+  }
+
+  #[test]
+  fn index_only() {
+    let send_path = SendPath(vec![Step::Index(0)]);
+    let ext = "wut";
+    let path = super::filename_of_path(&send_path, &ext.into());
+    assert_eq!(path, PathBuf::from("_.wut"));
+  }
+  #[test]
+  fn several_leading_index() {
+    let send_path = SendPath(vec![Step::Index(0),Step::Index(0),Step::Index(0)]);
+    let ext = "wut";
+    let path = super::filename_of_path(&send_path, &ext.into());
+    assert_eq!(path, PathBuf::from("_.wut"));
   }
 }
