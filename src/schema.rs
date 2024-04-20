@@ -74,6 +74,11 @@ pub enum SchemaType {
   Unknown(String),
 }
 
+/**
+For each path in the tree, this stores the kind of value at this path, along
+with statistical type data about how many times and what values are stored
+there.
+*/
 #[derive(Debug,Clone,Eq,PartialEq)]
 struct Leaf {
   kind : SchemaType,
@@ -130,8 +135,6 @@ impl std::fmt::Display for SchemaPath {
     write!(f,"{repr}")
   }
 }
-
-type LeafPaths = std::collections::BTreeMap<SchemaPath, std::collections::HashSet<Leaf>>;
 
 pub struct EventConverter();
 
@@ -200,6 +203,9 @@ impl Handler for EventConverter {
   }
 }
 
+type LeafKinds = std::collections::HashSet<Leaf>;
+type LeafPaths = std::collections::BTreeMap<SchemaPath, LeafKinds>;
+
 #[derive(Debug)]
 pub struct SchemaCollector {
   leaf_paths : LeafPaths
@@ -227,11 +233,11 @@ impl SchemaCollector {
 
           // leaf_paths is path => Set<Leaf>
           match self.leaf_paths.get_mut(&path) {
-            Some(leafs) => {
-              // find the current type in leafs
+            Some(leaf_kinds) => {
+              // find the current type in leaf_kinds
               use SchemaType::*;
               use NumberType::*;
-              let kind_option = leafs.iter().find(|Leaf{kind: stored_kind, ..}| {
+              let kind_option = leaf_kinds.iter().find(|Leaf{kind: stored_kind, ..}| {
                 match (value_type, stored_kind) {
                   (String(_), String(_)) => true,
                   (Number(Unsigned(_)), Number(Unsigned(_))) => true,
@@ -252,6 +258,7 @@ impl SchemaCollector {
                   let mut count = kind.count.borrow_mut();
                   *count += 1;
 
+                  // update the max/min and other aggregates here
                   // transfer values from value_type (ie the current leaf value) to aggregate (ie in the schema we're building)
                   let updated_aggregate_option = match (value_type,&*kind.aggregate.borrow()) {
                     (&String(val_n), &String(agg_n)) => Some(String(std::cmp::max(val_n,agg_n))),
@@ -260,18 +267,20 @@ impl SchemaCollector {
                     (&Number(Float(val_min,val_max)), &Number(Float(agg_min,agg_max))) => Some(Number(Float(f64::min(val_min,agg_min), f64::max(val_max,agg_max)))),
                     _ => None, // because no aggregates are collected for other types, so no need to update anything
                   };
+
                   if let Some(updated_aggregate) = updated_aggregate_option {
                     kind.aggregate.replace(updated_aggregate);
                   }
                 }
-                None => { leafs.insert(Leaf::new(value_type.clone())); }
+                None => { leaf_kinds.insert(Leaf::new(value_type.clone())); }
               }
 
             },
             None => {
-              let mut leafs = std::collections::HashSet::new();
-              leafs.insert(Leaf::new(value_type.clone()));
-              self.leaf_paths.insert(path, leafs);
+              // There are as yet no leafs for this path, so create a new leaf_kinds structure
+              let mut leaf_kinds = LeafKinds::new();
+              leaf_kinds.insert(Leaf::new(value_type.clone()));
+              self.leaf_paths.insert(path, leaf_kinds);
             }
           }
         }
