@@ -78,8 +78,8 @@ impl<'a, V: AsRef<[u8]>> ShredWriter<V>
   }
 }
 
-impl<V : AsRef<[u8]>> sender::Sender<sender::Event<V>> for ShredWriter<V> {
-  type SendError = ();
+impl<V : AsRef<[u8]> + std::fmt::Debug> sender::Sender<sender::Event<V>> for ShredWriter<V> {
+  type SendError = String;
 
   fn send(&mut self, ev: Box<sender::Event<V>>) -> Result<(), Self::SendError> {
     Ok(self.write_msgpack_value(&ev))

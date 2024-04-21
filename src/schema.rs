@@ -198,7 +198,7 @@ impl Handler for EventConverter {
     let schema_type = self.collect_type(path, ev);
     match tx.send(Box::new(Event::Value(path.into(), schema_type))) {
         Ok(()) => Ok(()),
-        Err(_err) => panic!("aaargh implement Debug for Sender<Event...>"),
+        Err(err) => panic!("{err:?}"),
     }
   }
 }
@@ -316,7 +316,7 @@ impl std::fmt::Display for SchemaCollector {
 }
 
 impl Sender<Event<SchemaType>> for SchemaCollector {
-  type SendError = ();
+  type SendError = String;
 
   // Fit in with what visitor wants
   fn send<'a>(&mut self, ev: Box<Event<SchemaType>>) -> Result<(), Self::SendError> {

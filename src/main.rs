@@ -30,7 +30,7 @@ fn main() {
 
       // just use a (mostly) simple function wrapper
       // which just outputs the value if sent.
-      let sender = &mut fn_snd::FnSnd(|ev| Ok::<(),()>(println!("fn_snd {ev:?}")));
+      let sender = &mut fn_snd::FnSnd(|ev| Ok::<(),String>(println!("fn_snd {ev:?}")));
       // Sends things as copies rather than references, and always returns true for path matches.
       let visitor = plain::Plain(|_| true);
 
@@ -47,7 +47,7 @@ fn main() {
       let visitor = valuer::Valuer(|_path| true);
       // just print them out
       // let sender = &mut valuer::ValueSender;
-      let sender = &mut fn_snd::FnSnd(|ev| Ok::<(),()>(println!("{ev:?}")));
+      let sender = &mut fn_snd::FnSnd(|ev| Ok::<(),String>(println!("{ev:?}")));
       // go and doit
       use handler::Handler;
       visitor

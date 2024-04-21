@@ -7,7 +7,7 @@ use crate::sender::Event;
 
 pub struct ChSender<T>(pub std::sync::mpsc::SyncSender<Event<T>>);
 
-impl<T : Clone> Sender<Event<T>> for ChSender<T> {
+impl<T : Clone + std::fmt::Debug> Sender<Event<T>> for ChSender<T> {
   type SendError=std::sync::mpsc::SendError<Event<T>>;
 
   // Here's where we actually do something with the json event

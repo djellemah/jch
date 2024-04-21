@@ -89,7 +89,7 @@ impl Handler for Valuer
 pub struct ValueSender;
 
 impl Sender<Event<serde_json::Value>> for ValueSender {
-  type SendError = ();
+  type SendError = String;
 
   // Here's where we actually do something with the json event
   // That is, decouple the handling of the parse events, from the actual parsing stream.

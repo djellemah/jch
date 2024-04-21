@@ -30,7 +30,9 @@ pub trait Handler {
   fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &JsonEvent, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
-  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  where
+    Snd : for <'x> Sender<Event<Self::V<'x>>>,
+    for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
   ;
 
   /// Handle all arrays.
@@ -40,7 +42,9 @@ pub trait Handler {
   // TODO why is depth here? It's duplicated in the parents path.
   fn array<'a, Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd )
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
-  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  where
+    Snd : for <'x> Sender<Event<Self::V<'x>>>,
+    for <'x> <Self as Handler>::V<'x>: std::fmt::Debug
   {
     let mut index = 0;
     let mut buf : Vec<u8> = vec![];
@@ -74,7 +78,9 @@ pub trait Handler {
   /// handle objects.
   fn object<'a, Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd )
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
-  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  where
+    Snd : for <'x> Sender<Event<Self::V<'x>>>,
+    for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
   {
     let mut buf : Vec<u8> = vec![];
     while let Some(ref ev) = jevs.next_buf(&mut buf) {
@@ -105,7 +111,9 @@ pub trait Handler {
   /// Handle String Number Boolean Null (ie non-recursive)
   fn value<'a,Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
-  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  where
+    Snd : for <'x> Sender<Event<Self::V<'x>>>,
+    for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
   {
     let mut buf : Vec<u8> = vec![];
     // json has exactly one top-level object

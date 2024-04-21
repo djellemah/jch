@@ -56,13 +56,11 @@ impl Handler for Plain
   // see Handler for an explanation of this
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>
-    // TODO this would have to be on Handler as well
-    // + for <'y> <Snd as Sender<Event<JsonEvent<'y>>>>::SendError : Debug
   {
     if self.match_path(path) {
       match tx.send(Box::new(Event::Value(path.into(), JsonEvent::from(ev)))) {
         Ok(()) => (),
-        Err(_err) => eprintln!("err:?"),
+        Err(err) => eprintln!("{err:?}"),
       }
     }
     Ok(())
