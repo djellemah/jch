@@ -18,6 +18,10 @@ Struson seems alive, but uses a fn for parsing elements of arrays, so would need
 https://github.com/marcono1234/struson
 
 # Large sample json files
+25M https://raw.githubusercontent.com/json-iterator/test-data/master/large-file.json
+
+181M https://github.com/zemirco/sf-city-lots-json/blob/master/citylots.json
+
 Some seriously big data here, finally. But take a wild guess which ones are large.
 
 https://catalog.data.gov/dataset/?q=large&sort=views_recent+desc&res_format=JSON&ext_location=&ext_bbox=&ext_prev_extent=
@@ -27,10 +31,6 @@ https://data.cdc.gov/api/views/qnzd-25i4/rows.json?accessType=DOWNLOAD
 
 Large json datasets here, but not really helpful because it's records, each containing some json.
 https://openlibrary.org/developers/dumps
-
-25M test file from here
-
-https://raw.githubusercontent.com/json-iterator/test-data/master/large-file.json
 
 some more test files here
 https://transparency-in-coverage.uhc.com/

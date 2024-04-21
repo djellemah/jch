@@ -170,7 +170,7 @@ impl EventConverter {
           SchemaType::Number(NumberType::Signed(i,i))
         } else if number_value.is_f64() {
           let f = number_value.as_f64().unwrap();
-          SchemaType::Number(NumberType::Float(f,f))
+          SchemaType::Number(NumberType::Float(f64::min(f,0.0),f64::max(f, 0.0)))
         } else {
           SchemaType::Unknown(v.into())
         }
