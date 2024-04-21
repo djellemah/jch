@@ -5,6 +5,7 @@ edition = "2021"
 default-run = "jch"
 
 [dependencies]
+serde_json = "1.0.132"
 # see also https://docs.rs/im/latest/im/
 rpds = { version = "1.1", features = ["serde"] }
 rmp = "0.8.14"
@@ -16,7 +17,7 @@ rtrb = "0.3"
 
 # https://github.com/matsadler/magnus#embedding-ruby-in-rust
 magnus = { version = "0.7", features = ["embed"] }
-serde_json = "1.0.132"
+rb-sys = "0.9.102"
 
 [build-dependencies]
 cxx-build = "1.0"
