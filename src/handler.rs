@@ -39,8 +39,9 @@ pub trait Handler {
   /// values will be emitted via maybe_send_value
   /// nested arrays are recursive
   /// objects are sent to object(...)
-  // TODO why is depth here? It's duplicated in the parents path.
-  fn array<'a, Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd )
+  //
+  // depth: parents.len < depth because depth additionally counts StartObject and StartArray
+  fn array<'a, Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : usize, tx : &mut Snd )
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
@@ -73,7 +74,7 @@ pub trait Handler {
   }
 
   /// handle objects.
-  fn object<'a, Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd )
+  fn object<'a, Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : usize, tx : &mut Snd )
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
@@ -103,7 +104,7 @@ pub trait Handler {
   }
 
   /// Handle String Number Boolean Null (ie non-recursive)
-  fn value<'a,Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : u64, tx : &mut Snd)
+  fn value<'a,Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : usize, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
