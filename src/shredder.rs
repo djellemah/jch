@@ -104,34 +104,30 @@ where
     JsonEvent::String(v) => {
       match rmp::encode::write_str(&mut buf, v.as_ref() ) {
         Ok(()) => Event::Value(SendPath::from(path), buf),
-        Err(err) => panic!("msgpack error {err}"),
+        Err(err) => Event::Error(format!("msgpack error {err:?}")),
       }
     }
 
     JsonEvent::Number(v) => {
       let number_value : serde_json::Number = match serde_json::from_str(v.as_ref()) {
         Ok(n) => n,
-        Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
+        Err(msg) => return Event::Error(format!("{v} appears to be not-a-number {msg}")),
       };
 
-      // TODO trying to wrap this in a Result instead of panic! causes trouble
-      // because Event<&'a mut Vec<u8>? is not coerceable to Event<&'a Vec<u8>>
-      // despite coercion rules ¯\_(/")_/¯
-      // So Event enum then needs the Error(_) item
       if number_value.is_u64() {
         match rmp::encode::write_uint(&mut buf, number_value.as_u64().unwrap()) {
           Ok(_) => Event::Value(SendPath::from(path), buf),
-          Err(err) => Event::Error(format!("{err:?}")),
+          Err(err) => Event::Error(format!("msgpack error {err:?}")),
         }
       } else if number_value.is_i64() {
         match rmp::encode::write_sint(&mut buf, number_value.as_i64().unwrap()) {
           Ok(_) => Event::Value(SendPath::from(path), buf),
-          Err(err) => Event::Error(format!("{err:?}")),
+          Err(err) => Event::Error(format!("msgpack error {err:?}")),
         }
       } else if number_value.is_f64() {
         match rmp::encode::write_f64(&mut buf, number_value.as_f64().unwrap()) {
           Ok(()) => Event::Value(SendPath::from(path), buf),
-          Err(err) => Event::Error(format!("{err:?}")),
+          Err(err) => Event::Error(format!("msgpack error {err:?}")),
         }
       } else {
         panic!("wut!?")
@@ -141,14 +137,14 @@ where
     JsonEvent::Boolean(v) => {
       match rmp::encode::write_bool(&mut buf, *v) {
         Ok(()) => Event::Value(SendPath::from(path), buf),
-        Err(err) => panic!("msgpack error {err}"),
+        Err(err) => Event::Error(format!("msgpack error {err:?}")),
       }
     }
 
     JsonEvent::Null => {
       match rmp::encode::write_nil(&mut buf) {
         Ok(()) => Event::Value(SendPath::from(path), buf),
-        Err(err) => panic!("msgpack error {err}"),
+        Err(err) => Event::Error(format!("msgpack error {err:?}")),
       }
     }
 
