@@ -66,10 +66,7 @@ pub trait Handler {
 
         Eof => tx.send(Box::new(Event::Finished)),
       };
-      match res {
-          Ok(()) => (),
-          err => return err,
-      }
+      if let Err(_) = res { return res };
       index += 1;
     }
     Ok(())
@@ -100,10 +97,7 @@ pub trait Handler {
         // fin
         Eof => tx.send(Box::new(Event::Finished)),
       };
-      match res {
-          Ok(()) => (),
-          err => return err,
-      }
+      if let Err(_) = res { return res };
     }
     Ok(())
   }

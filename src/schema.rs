@@ -64,6 +64,7 @@ impl std::hash::Hash for NumberType {
   }
 }
 
+/// enum for the types in a schema.
 #[derive(Debug,Clone,Eq,PartialEq,Hash)]
 pub enum SchemaType {
   // max_len
@@ -196,10 +197,10 @@ impl Handler for EventConverter {
   {
     if !self.match_path(&path) { return Ok(()) }
     let schema_type = self.collect_type(path, ev);
-    match tx.send(Box::new(Event::Value(path.into(), schema_type))) {
-        Ok(()) => Ok(()),
-        Err(err) => panic!("{err:?}"),
-    }
+    tx
+      .send(Box::new(Event::Value(path.into(), schema_type)))
+      .unwrap_or_else(|err| panic!("cannot send {ev:?} because {err:?}"));
+    Ok(())
   }
 }
 

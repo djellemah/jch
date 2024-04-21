@@ -65,13 +65,13 @@ impl<'a, V: AsRef<[u8]>> ShredWriter<V>
   {
     use sender::Event;
     match ev {
-      Event::Path(_depth,_path) => (),
       Event::Value(send_path,v) =>
       {
         let mut file = self.find_or_create(send_path);
         use std::io::Write;
         file.write_all(v.as_ref()).unwrap();
       },
+      Event::Path(_depth,_path) => (),
       Event::Finished => (),
       &Event::Error(_) => todo!(),
     }
@@ -184,10 +184,9 @@ impl Handler for MsgPacker {
     if !self.match_path(&path) { return Ok(()) }
     let send_event = encode_to_msgpack::<JsonPath,String>(path, &crate::plain::JsonEvent::from(ev));
     // OPT must this really be in a box?
-    if let Err(_msg) = tx.send(Box::new(send_event)) {
-      // TODO Sender::Event::<V> does not implement Display or Debug so we can't use it here.
-      panic!("could not send event {ev:?}");
-    }
+    tx
+      .send(Box::new(send_event))
+      .unwrap_or_else(|err| panic!("could not send event {ev:?} because {err:?}"));
     Ok(())
   }
 }
@@ -204,10 +203,9 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
   // serialisation format for columns
   let visitor = MsgPacker::new();
 
-  match visitor.value(&mut jevstream, JsonPath::new(), 0, &mut writer ) {
-    Ok(()) => (),
-    Err(err) => { eprintln!("ending event reading because {err:?}") },
-  }
+  visitor
+    .value(&mut jevstream, JsonPath::new(), 0, &mut writer )
+    .unwrap_or_else(|err| eprintln!("ending event reading because {err:?}") );
 }
 
 // T = serde_json::Value, for example

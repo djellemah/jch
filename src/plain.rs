@@ -28,17 +28,18 @@ pub enum JsonEvent<T> {
 
 impl<T : for<'a> From<&'a str>> From<&json_event_parser::JsonEvent<'_>> for JsonEvent<T>{
   fn from(jev: &json_event_parser::JsonEvent<'_>) -> Self {
+    use json_event_parser as jep;
     match *jev {
-      json_event_parser::JsonEvent::String(v) => JsonEvent::String(v.into()),
-      json_event_parser::JsonEvent::Number(v) => JsonEvent::Number(v.into()),
-      json_event_parser::JsonEvent::Boolean(v) => JsonEvent::Boolean(v.into()),
-      json_event_parser::JsonEvent::Null => JsonEvent::Null,
-      json_event_parser::JsonEvent::StartArray => JsonEvent::StartArray,
-      json_event_parser::JsonEvent::EndArray => JsonEvent::EndArray,
-      json_event_parser::JsonEvent::StartObject => JsonEvent::StartObject,
-      json_event_parser::JsonEvent::EndObject => JsonEvent::EndObject,
-      json_event_parser::JsonEvent::ObjectKey(v) => JsonEvent::ObjectKey(v.into()),
-      json_event_parser::JsonEvent::Eof => JsonEvent::Eof,
+      jep::JsonEvent::String(v)    => JsonEvent::String(v.into()),
+      jep::JsonEvent::Number(v)    => JsonEvent::Number(v.into()),
+      jep::JsonEvent::Boolean(v)   => JsonEvent::Boolean(v.into()),
+      jep::JsonEvent::Null         => JsonEvent::Null,
+      jep::JsonEvent::StartArray   => JsonEvent::StartArray,
+      jep::JsonEvent::EndArray     => JsonEvent::EndArray,
+      jep::JsonEvent::StartObject  => JsonEvent::StartObject,
+      jep::JsonEvent::EndObject    => JsonEvent::EndObject,
+      jep::JsonEvent::ObjectKey(v) => JsonEvent::ObjectKey(v.into()),
+      jep::JsonEvent::Eof          => JsonEvent::Eof,
     }
   }
 }
@@ -50,18 +51,16 @@ impl Handler for Plain
 {
   type V<'l> = JsonEvent<String>;
 
-  // default implementation that does nothing and returns OK
+  /// send the event provided the fn at self.0 returns true
   fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
-  // see Handler for an explanation of this
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
     if self.match_path(path) {
-      match tx.send(Box::new(Event::Value(path.into(), JsonEvent::from(ev)))) {
-        Ok(()) => (),
-        Err(err) => eprintln!("{err:?}"),
-      }
+      tx
+        .send(Box::new(Event::Value(path.into(), JsonEvent::from(ev))))
+        .unwrap_or_else(|err| eprintln!("error sending {ev:?} because {err:?}"))
     }
     Ok(())
   }

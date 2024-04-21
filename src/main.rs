@@ -30,7 +30,9 @@ fn main() {
 
       // just use a (mostly) simple function wrapper
       // which just outputs the value if sent.
-      let sender = &mut fn_snd::FnSnd(|ev| Ok::<(),String>(println!("fn_snd {ev:?}")));
+      // kak syntax.
+      let sender = &mut fn_snd::FnSnd( |ev| { println!("fn_snd {ev:?}"); Ok::<(),String>(())} );
+
       // Sends things as copies rather than references, and always returns true for path matches.
       let visitor = plain::Plain(|_| true);
 
