@@ -39,6 +39,10 @@ mod ruby {
 
     let sender = &mut fn_snd::FnSnd( |ev| { println!("ruby_fn_snd {ev:?}"); Ok::<(),String>(())} );
 
+    // RUBY_YJIT_ENABLE= yes/true/1 no/false/0
+    // let jit_enabled : bool = ruby.eval::<bool>("RubyVM::YJIT.enabled?").expect("RubyVM::YJIT.enabled?");
+    // println!("jit_enabled: {jit_enabled}");
+
     // TODO will need to set LOAD_PATH for this to work
     // ruby.require("ch").expect("can't require ruby ch(.rb)");
     ruby.eval::<bool>(r#"load "src/bin/ch.rb""#).expect("ruby can't load ch.rb");
