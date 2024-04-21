@@ -60,7 +60,7 @@ impl<V> ShredWriter<V>
 
 impl<'a, V: AsRef<[u8]>> ShredWriter<V>
 {
-  // receives events from the streaming parser
+  /// Writes events from our event source, whose ultimate source is a streaming parser.
   pub fn write_msgpack_value(&mut self, ev : &'a sender::Event<V>)
   {
     use sender::Event;
@@ -87,7 +87,9 @@ impl<V : AsRef<[u8]>> sender::Sender<sender::Event<V>> for ShredWriter<V> {
 }
 
 /// convert the given json event to a sender event containing messagepack in its buffer
-fn encode_to_msgpack<'a, 'b, Path: 'a, Stringish : 'b>(path : &'a Path, ev : &'b crate::plain::JsonEvent<Stringish>)
+fn encode_to_msgpack
+<'a, 'b, Path: 'a, Stringish : 'b>
+(path : &'a Path, ev : &'b crate::plain::JsonEvent<Stringish>)
 -> sender::Event<Vec<u8>>
 where
   Stringish : AsRef<str> + std::fmt::Display,
@@ -213,17 +215,19 @@ pub fn channel_shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
 where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 {
   use crate::plain::Plain;
+  // The event that will be sent across the channel
   type ChEvent<'a> = sender::Event<<Plain as Handler>::V<'a>>;
+
   // this seems to be about optimal wrt performance
   const CHANNEL_SIZE : usize = 8192;
   let (tx, rx) = std::sync::mpsc::sync_channel::<ChEvent>(CHANNEL_SIZE);
 
   // consumer thread
   let cons_thr = {
+    let dir = dir.clone();
     // use crate::shredder::ShredWriter;
+    std::thread::Builder::new().name("jch recv".into()).spawn(move || {
     let mut writer : ShredWriter<Vec<u8>> = ShredWriter::new(&dir, "mpk");
-
-    std::thread::spawn(move || {
       while let Ok(ref event) = rx.recv() {
         use sender::Event;
         let msgpacked_event = match event {
@@ -233,7 +237,7 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 
         writer.write_msgpack_value(&msgpacked_event)
       }
-    })
+    }).expect("cannot create recv thread")
   };
 
   // jump through hoops so cons_thr join will work
@@ -287,8 +291,7 @@ fn filename_of_path<'a>(send_path : &'a crate::sendpath::SendPath, ext : &'a Str
     .chain(once(ext.as_str()))
     .intersperse(".")
     .collect::<String>()
-    .replace(" ","")
-    .replace("/","_")
+    .replace([' ','/'],"_")
     .into()
 }
 
@@ -320,11 +323,21 @@ mod test_filename_of_path {
     let path = super::filename_of_path(&send_path, &ext.into());
     assert_eq!(path, PathBuf::from("_.wut"));
   }
+
   #[test]
   fn several_leading_index() {
     let send_path = SendPath(vec![Step::Index(0),Step::Index(0),Step::Index(0)]);
     let ext = "wut";
     let path = super::filename_of_path(&send_path, &ext.into());
     assert_eq!(path, PathBuf::from("_.wut"));
+  }
+
+  #[test]
+  fn bad_chars() {
+    // space and /
+    let send_path = SendPath(vec![Step::Key("this is a bad/dangerous path".into())]);
+    let ext = "wut";
+    let path = super::filename_of_path(&send_path, &ext.into());
+    assert_eq!(path, PathBuf::from("this_is_a_bad_dangerous_path.wut"));
   }
 }

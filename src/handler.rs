@@ -44,7 +44,7 @@ pub trait Handler {
   {
     let mut index = 0;
     let mut buf : Vec<u8> = vec![];
-    while let Some(ev) = jevs.next_buf(&mut buf) {
+    while let Some(ref ev) = jevs.next_buf(&mut buf) {
       // NOTE rpds persistent vector
       let loop_parents = parents.push_back(index.into());
       use JsonEvent::*;
@@ -77,9 +77,9 @@ pub trait Handler {
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
     let mut buf : Vec<u8> = vec![];
-    while let Some(ev) = jevs.next_buf(&mut buf) {
+    while let Some(ref ev) = jevs.next_buf(&mut buf) {
       use JsonEvent::*;
-      let res = match ev {
+      let res = match &ev {
         // ok we have a leaf, so emit the value and path.
         // no need to shunt this through value(...)
         String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
@@ -88,7 +88,7 @@ pub trait Handler {
         EndArray => panic!("should never receive EndArray {parents}"),
 
         StartObject => self.value(jevs, parents.clone(), depth+1, tx),
-        ObjectKey(key) => self.value(jevs, parents.push_back(key.into()), depth+1, tx),
+        ObjectKey(key) => self.value(jevs, parents.push_back((*key).into()), depth+1, tx),
         EndObject => return Ok(()),
 
         // fin
@@ -109,7 +109,7 @@ pub trait Handler {
   {
     let mut buf : Vec<u8> = vec![];
     // json has exactly one top-level object
-    if let Some(ev) = jevs.next_buf(&mut buf) {
+    if let Some(ref ev) = jevs.next_buf(&mut buf) {
       use JsonEvent::*;
       match ev {
         // ok we have a leaf, so emit the value and path

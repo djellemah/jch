@@ -338,13 +338,16 @@ pub fn schema(jev : &mut JsonEvents) {
 }
 
 pub fn sizes(wr : &mut dyn std::io::Write) -> std::io::Result<()> {
-  writeln!(wr, "jsonpath::Step {}", std::mem::size_of::<crate::jsonpath::Step>())?;
-  writeln!(wr, "jsonpath::JsonPath {}", std::mem::size_of::<crate::jsonpath::JsonPath>())?;
-  writeln!(wr, "sender::Event<Vec<u8>> {}", std::mem::size_of::<crate::sender::Event<Vec<u8>>>())?;
-  writeln!(wr, "sender::Event<&Vec<u8>> {}", std::mem::size_of::<crate::sender::Event<&Vec<u8>>>())?;
-  writeln!(wr, "sender::Event<u8> {}", std::mem::size_of::<crate::sender::Event<u8>>())?;
-  writeln!(wr, "sender::Event<&u8> {}", std::mem::size_of::<crate::sender::Event<&u8>>())?;
-  writeln!(wr, "schema::SchemaType {}", std::mem::size_of::<crate::schema::SchemaType>())?;
-  writeln!(wr, "schema::Leaf {}", std::mem::size_of::<crate::schema::Leaf>())?;
+  use std::mem::size_of;
+  writeln!(wr, "jsonpath::Step {}", size_of::<crate::jsonpath::Step>())?;
+  writeln!(wr, "jsonpath::JsonPath {}", size_of::<crate::jsonpath::JsonPath>())?;
+  writeln!(wr, "plain::JsonEvent<String> {}", size_of::<crate::plain::JsonEvent<String>>())?;
+  writeln!(wr, "plain::JsonEvent<&str> {}", size_of::<crate::plain::JsonEvent<&str>>())?;
+  writeln!(wr, "sender::Event<Vec<u8>> {}", size_of::<crate::sender::Event<Vec<u8>>>())?;
+  writeln!(wr, "sender::Event<&Vec<u8>> {}", size_of::<crate::sender::Event<&Vec<u8>>>())?;
+  writeln!(wr, "sender::Event<u8> {}", size_of::<crate::sender::Event<u8>>())?;
+  writeln!(wr, "sender::Event<&u8> {}", size_of::<crate::sender::Event<&u8>>())?;
+  writeln!(wr, "schema::SchemaType {}", size_of::<crate::schema::SchemaType>())?;
+  writeln!(wr, "schema::Leaf {}", size_of::<crate::schema::Leaf>())?;
   Ok(())
 }
