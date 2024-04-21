@@ -42,20 +42,23 @@ mod ruby {
     // TODO will need to set LOAD_PATH for this to work
     // ruby.require("ch").expect("can't require ruby ch(.rb)");
     ruby.eval::<bool>(r#"load "src/bin/ch.rb""#).expect("ruby can't load ch.rb");
+    let ruby_self = magnus::eval::<magnus::Value>("self").expect("ruby can't find self");
+    let filter_path_symbol = magnus::value::StaticSymbol::new("filter_path");
 
     // Sends things as copies rather than references, and always returns true for path matches.
-    let visitor = plain::Plain(|path| {
-      use magnus::RArray;
+    let visitor = plain::Plain(Box::new(move |path : &jsonpath::JsonPath| {
+      use magnus::value::ReprValue; // for funcall
       let path_iter = path
         .iter()
         // TODO serde this into ruby hash with {index:, key: value:}
         // or something like that.
         .map(|step| step.to_string());
-      let path = RArray::from_iter(path_iter);
-      // TODO a more direct way to call the method, ie without eval
-      let filter_it : bool = magnus::eval![r#"filter_path a"#, a = path].expect("ruby can't exec function filter_path");
+
+      let filter_it : bool = ruby_self
+        .funcall(filter_path_symbol, [magnus::RArray::from_iter(path_iter)])
+        .expect("failed to call filter path");
       filter_it
-    });
+    }));
 
     use handler::Handler;
     visitor
@@ -63,6 +66,13 @@ mod ruby {
       // TODO send this error back to ruby?
       .unwrap_or_else(|err| eprintln!("ending event reading because {err:?}"));
   }
+
+  /*
+  Benchmarks:
+
+  - 13 seconds with eval and path_ary.length >= 7
+  -  5 seconds with ruby_self path_ary.length >= 7
+  */
 
   pub fn main() {
     magnus::Ruby::init(|ruby| {
