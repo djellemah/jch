@@ -251,8 +251,9 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
     let mut jevstream = parser::JsonEventParser::new(istream);
 
     let tx = tx.clone();
+    let path_filter = &|_ : &JsonPath| true;
     // This will send `sender::Event<plain::JsonEvent>` over the channel
-    let visitor = Plain(|_| true);
+    let visitor = Plain(Box::new(path_filter));
     let mut tx_sender: ChSender<<Plain as Handler>::V<'_>> = ChSender(tx);
     visitor.value(&mut jevstream, JsonPath::new(), 0, &mut tx_sender).unwrap_or_else(|_| println!("uhoh"));
     // inner tx dropped automatically here

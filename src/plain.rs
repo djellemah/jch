@@ -9,7 +9,11 @@ use crate::sender::Sender;
 use crate::parser::JsonEvent;
 
 /// Converts json_event_parser events to JsonEvent<String> which contains its own buffer.
-pub struct Plain(pub fn(&JsonPath) -> bool);
+// type PathFilter = pub Fn(&JsonPath) -> bool;
+pub struct Plain(pub Box<dyn Fn(&JsonPath) -> bool>);
+// pub struct Plain(pub fn(&JsonPath) -> bool);
+
+// pub struct Plain(pub dyn Fn(&JsonPath) -> bool);
 
 impl Handler for Plain
 {

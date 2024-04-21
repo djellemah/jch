@@ -34,7 +34,7 @@ fn main() {
       let sender = &mut fn_snd::FnSnd( |ev| { println!("fn_snd {ev:?}"); Ok::<(),String>(())} );
 
       // Sends things as copies rather than references, and always returns true for path matches.
-      let visitor = plain::Plain(|_| true);
+      let visitor = plain::Plain(Box::new(|_| true));
 
       use handler::Handler;
       visitor
