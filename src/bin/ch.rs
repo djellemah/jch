@@ -19,6 +19,9 @@ rutie is a bit weird
 https://github.com/danielpclark/rutie#using-ruby-in-rust
 rutie = "0.8"
 
+Low-level https://github.com/oxidize-rb/rb-sys
+High-level https://github.com/matsadler/magnus
+
 Lua
 https://github.com/mlua-rs/mlua
 
@@ -115,16 +118,63 @@ use jch::sender::Sender;
   /*
   Benchmarks:
 
-  - 13 seconds with eval and path_ary.length >= 7
-  -  5 seconds with ruby_self path_ary.length >= 7
+  - 13   seconds with eval and path_ary.length >= 7
+  -  5   seconds with ruby_self path_ary.length >= 7
+  -  4.1 seconds with yjit/rjit
   */
 
+  // Oh ffs. This is buried inside magnus, which does not expose the relevant
+  // functionality. So just fall back to rb_sys and ignore the errors for now.
+  //
+  // https://ruby-doc.org/3.3.0/yjit/yjit_md.html
+  //
+  // NOTE can also use the RUBY_YJIT_ENABLE env var - spefically for cases where
+  // command-line options are not accessible.
+  //
+  // You can also enable YJIT at run-time using `RubyVM::YJIT.enable`. This can
+  // allow you to enable YJIT after your application is done booting, which
+  // makes it possible to avoid compiling any initialization code.
+  //
+  // You can verify that YJIT is enabled using RubyVM::YJIT.enabled?
+  unsafe fn init_ruby(opts : &[&str]) -> magnus::Ruby {
+    // this is from magnus::setup
+    let mut variable_in_this_stack_frame: rb_sys::VALUE = 0;
+    rb_sys::ruby_init_stack(&mut variable_in_this_stack_frame as *mut rb_sys::VALUE as *mut _);
+    if rb_sys::ruby_setup() != 0 {
+        panic!("Failed to setup Ruby");
+    };
+
+    // ok now do the part from init/init_options
+    // except skip the error handling cos it's also buried. So if this fails we fall back to debug-by-guesswork :-|
+    use std::ffi::CString;
+    let mut argv = vec![CString::new("ruby").unwrap()];
+    argv.extend(opts.iter().map(|s| CString::new(*s).unwrap()));
+    let mut argv = argv
+        .iter()
+        .map(|cs| cs.as_ptr() as *mut _)
+        .collect::<Vec<_>>();
+
+    let node = rb_sys::bindings::uncategorized::ruby_process_options(argv.len() as i32, argv.as_mut_ptr());
+
+    magnus::Ruby::get_unchecked().qnil();
+
+    if rb_sys::ruby_exec_node(node) != 0 {
+        panic!("Ruby init code failed");
+    };
+    magnus::Ruby::get_unchecked()
+  }
+
   pub fn main() {
-    magnus::Ruby::init(|ruby| {
-      let args : Vec<String> = std::env::args().collect();
-      filter(ruby, &args[1]);
-      Ok(())
-    }).unwrap();
+    // using jit is definitely faster. about 20%
+    // rjit is still apparently a bit experimental.
+    // --yjit also works here, but is a tad slower.
+    // let ruby = unsafe {init_ruby(&["-e", "", "--rjit", "--rjit-stats"])};
+    // let ruby = unsafe {init_ruby(&["-e", "", "--yjit", "--yjit-stats"])};
+    // let ruby = unsafe {init_ruby(&["-e", "", "--yjit"])};
+    let ruby = unsafe {init_ruby(&["-e", "", "--rjit"])};
+    let args : Vec<String> = std::env::args().collect();
+    filter(&ruby, &args[1]);
+    unsafe { rb_sys::ruby_cleanup(0); }
   }
 }
 
