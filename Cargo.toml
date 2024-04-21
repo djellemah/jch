@@ -20,5 +20,15 @@ rustc-hash = "1.1.0"
 cxx = "1.0"
 rtrb = "0.3"
 
+# Nah. Cmon people srsly. Direct ffi is not what I'm looking for.
+# https://dev.to/leehambley/sending-complex-structs-to-ruby-from-rust-4e61
+
+# rutie is a bit weird
+# https://github.com/danielpclark/rutie#using-ruby-in-rust
+# rutie = "0.8"
+
+# https://github.com/matsadler/magnus#embedding-ruby-in-rust
+magnus = { version = "0.6", features = ["embed"] }
+
 [build-dependencies]
 cxx-build = "1.0"
