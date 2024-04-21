@@ -35,6 +35,7 @@ macro_rules! package {
   };
 }
 
+/// Converts json_event_parser events to serde_json, and then calls the function.
 pub struct Valuer(pub fn(&JsonPath) -> bool);
 
 impl Handler for Valuer

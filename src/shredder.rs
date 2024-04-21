@@ -6,7 +6,7 @@ Each file contains all the values from that path, in order.
 use crate::parser;
 use crate::handler::Handler;
 use crate::jsonpath::*;
-use crate::sender::*;
+use crate::sender;
 use crate::sendpath::SendPath;
 
 pub struct ShredWriter<V> {
@@ -37,7 +37,7 @@ impl<V> ShredWriter<V>
   ///
   /// Self keeps a hashmap of
   ///
-  /// PathBuf => File
+  /// `PathBuf => File`
   ///
   /// so it doesn't repeatedly reopen the same files.
   fn find_or_create<'a>(&'a mut self, send_path : &crate::sendpath::SendPath) -> &'a std::fs::File {
@@ -45,7 +45,8 @@ impl<V> ShredWriter<V>
     if self.files.contains_key(&pathname) {
       self.files.get(&pathname).unwrap()
     } else {
-      let file = std::fs::File::create(&pathname).unwrap();
+      // expect here because by now the filename should have valid characters, and other errors are fatal anyway.
+      let file = std::fs::File::create(&pathname).expect(format!("error for path {pathname:?}").as_str());
       // by definition this is a None
       if let Some(_) = self.files.insert(pathname.clone(), file) {
         panic!("oops with {pathname:?}")
@@ -60,8 +61,9 @@ impl<V> ShredWriter<V>
 impl<'a, V: AsRef<[u8]>> ShredWriter<V>
 {
   // receives events from the streaming parser
-  pub fn write_msgpack_value(&mut self, ev : &'a Event<V>)
+  pub fn write_msgpack_value(&mut self, ev : &'a sender::Event<V>)
   {
+    use sender::Event;
     match ev {
       Event::Path(_depth,_path) => (),
       Event::Value(send_path,v) =>
@@ -76,11 +78,79 @@ impl<'a, V: AsRef<[u8]>> ShredWriter<V>
   }
 }
 
-impl<V : AsRef<[u8]>> Sender<Event<V>> for ShredWriter<V> {
+impl<V : AsRef<[u8]>> sender::Sender<sender::Event<V>> for ShredWriter<V> {
   type SendError = ();
 
-  fn send(&mut self, ev: Box<Event<V>>) -> Result<(), Self::SendError> {
+  fn send(&mut self, ev: Box<sender::Event<V>>) -> Result<(), Self::SendError> {
     Ok(self.write_msgpack_value(&ev))
+  }
+}
+
+/// convert the given json event to a sender event containing messagepack in its buffer
+fn encode_to_msgpack<'a, 'b, Path: 'a, Stringish : 'b>(path : &'a Path, ev : &'b crate::plain::JsonEvent<Stringish>)
+-> sender::Event<Vec<u8>>
+where
+  Stringish : AsRef<str> + std::fmt::Display,
+  crate::sendpath::SendPath : for<'sp> From<&'sp Path>,
+{
+  // store msgpack bytes in here
+  let mut buf = vec![];
+
+  use sender::Event;
+  use crate::plain::JsonEvent;
+  match ev {
+    JsonEvent::String(v) => {
+      match rmp::encode::write_str(&mut buf, v.as_ref() ) {
+        Ok(()) => Event::Value(SendPath::from(path), buf),
+        Err(err) => panic!("msgpack error {err}"),
+      }
+    }
+
+    JsonEvent::Number(v) => {
+      let number_value : serde_json::Number = match serde_json::from_str(v.as_ref()) {
+        Ok(n) => n,
+        Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
+      };
+
+      // TODO trying to wrap this in a Result instead of panic! causes trouble
+      // because Event<&'a mut Vec<u8>? is not coerceable to Event<&'a Vec<u8>>
+      // despite coercion rules ¯\_(/")_/¯
+      // So Event enum then needs the Error(_) item
+      if number_value.is_u64() {
+        match rmp::encode::write_uint(&mut buf, number_value.as_u64().unwrap()) {
+          Ok(_) => Event::Value(SendPath::from(path), buf),
+          Err(err) => Event::Error(format!("{err:?}")),
+        }
+      } else if number_value.is_i64() {
+        match rmp::encode::write_sint(&mut buf, number_value.as_i64().unwrap()) {
+          Ok(_) => Event::Value(SendPath::from(path), buf),
+          Err(err) => Event::Error(format!("{err:?}")),
+        }
+      } else if number_value.is_f64() {
+        match rmp::encode::write_f64(&mut buf, number_value.as_f64().unwrap()) {
+          Ok(()) => Event::Value(SendPath::from(path), buf),
+          Err(err) => Event::Error(format!("{err:?}")),
+        }
+      } else {
+        panic!("wut!?")
+      }
+    }
+
+    JsonEvent::Boolean(v) => {
+      match rmp::encode::write_bool(&mut buf, *v) {
+        Ok(()) => Event::Value(SendPath::from(path), buf),
+        Err(err) => panic!("msgpack error {err}"),
+      }
+    }
+
+    JsonEvent::Null => {
+      match rmp::encode::write_nil(&mut buf) {
+        Ok(()) => Event::Value(SendPath::from(path), buf),
+        Err(err) => panic!("msgpack error {err}"),
+      }
+    }
+
+    _ => todo!(),
   }
 }
 
@@ -89,68 +159,6 @@ pub struct MsgPacker();
 impl MsgPacker {
   pub fn new() -> Self {
     Self()
-  }
-
-  fn encode_to_msgpack(path : &JsonPath, ev : &json_event_parser::JsonEvent)
-  -> Event<Vec<u8>>
-  {
-    use json_event_parser::JsonEvent::*;
-    let mut buf = vec![];
-
-    match ev {
-      &String(v) => {
-        match rmp::encode::write_str(&mut buf, &v) {
-          Ok(()) => Event::Value(SendPath::from(path), buf),
-          Err(err) => panic!("msgpack error {err}"),
-        }
-      }
-
-      &Number(v) => {
-        let number_value : serde_json::Number = match serde_json::from_str(v) {
-          Ok(n) => n,
-          Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
-        };
-
-        // TODO trying to wrap this in a Result instead of panic! causes trouble
-        // because Event<&'a mut Vec<u8>? is not coerceable to Event<&'a Vec<u8>>
-        // despite coercion rules ¯\_(/")_/¯
-        // So Event enum then needs the Error(_) item
-        if number_value.is_u64() {
-          match rmp::encode::write_uint(&mut buf, number_value.as_u64().unwrap()) {
-            Ok(_) => Event::Value(SendPath::from(path), buf),
-            Err(err) => Event::Error(format!("{err:?}")),
-          }
-        } else if number_value.is_i64() {
-          match rmp::encode::write_sint(&mut buf, number_value.as_i64().unwrap()) {
-            Ok(_) => Event::Value(SendPath::from(path), buf),
-            Err(err) => Event::Error(format!("{err:?}")),
-          }
-        } else if number_value.is_f64() {
-          match rmp::encode::write_f64(&mut buf, number_value.as_f64().unwrap()) {
-            Ok(()) => Event::Value(SendPath::from(path), buf),
-            Err(err) => Event::Error(format!("{err:?}")),
-          }
-        } else {
-          panic!("wut!?")
-        }
-      }
-
-      &Boolean(v) => {
-        match rmp::encode::write_bool(&mut buf, v) {
-          Ok(()) => Event::Value(SendPath::from(path), buf),
-          Err(err) => panic!("msgpack error {err}"),
-        }
-      }
-
-      Null => {
-        match rmp::encode::write_nil(&mut buf) {
-          Ok(()) => Event::Value(SendPath::from(path), buf),
-          Err(err) => panic!("msgpack error {err}"),
-        }
-      }
-
-      _ => todo!(),
-    }
   }
 }
 
@@ -167,12 +175,12 @@ impl Handler for MsgPacker {
 
   // encode values as MessagePack, then send to shredder
   fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
-  -> Result<(),<Snd as Sender<Event<<MsgPacker as Handler>::V<'_>>>>::SendError>
+  -> Result<(),<Snd as sender::Sender<sender::Event<<MsgPacker as Handler>::V<'_>>>>::SendError>
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
-  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  where Snd : for <'x> sender::Sender<sender::Event<Self::V<'x>>>
   {
     if !self.match_path(&path) { return Ok(()) }
-    let send_event = Self::encode_to_msgpack(path, ev);
+    let send_event = encode_to_msgpack::<JsonPath,String>(path, &crate::plain::JsonEvent::from(ev));
     // OPT must this really be in a box?
     if let Err(_msg) = tx.send(Box::new(send_event)) {
       // TODO Sender::Event::<V> does not implement Display or Debug so we can't use it here.
@@ -199,6 +207,54 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
     Err(err) => { eprintln!("ending event reading because {err:?}") },
   }
 }
+
+// T = serde_json::Value, for example
+pub fn channel_shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
+where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
+{
+  use crate::plain::Plain;
+  type ChEvent<'a> = sender::Event<<Plain as Handler>::V<'a>>;
+  // this seems to be about optimal wrt performance
+  const CHANNEL_SIZE : usize = 8192;
+  let (tx, rx) = std::sync::mpsc::sync_channel::<ChEvent>(CHANNEL_SIZE);
+
+  // consumer thread
+  let cons_thr = {
+    // use crate::shredder::ShredWriter;
+    let mut writer : ShredWriter<Vec<u8>> = ShredWriter::new(&dir, "mpk");
+
+    std::thread::spawn(move || {
+      while let Ok(ref event) = rx.recv() {
+        use sender::Event;
+        let msgpacked_event = match event {
+          Event::Value(path,ev) => encode_to_msgpack::<SendPath,String>(path, ev),
+          err => todo!("{err:?}"),
+        };
+
+        writer.write_msgpack_value(&msgpacked_event)
+      }
+    })
+  };
+
+  // jump through hoops so cons_thr join will work
+  {
+    use crate::channel::ChSender;
+    let istream = crate::make_readable(maybe_readable_args);
+    let mut jevstream = parser::JsonEvents::new(istream);
+
+    let tx = tx.clone();
+    // This will send `sender::Event<plain::JsonEvent>` over the channel
+    let visitor = Plain(|_| true);
+    let mut tx_sender: ChSender<<Plain as Handler>::V<'_>> = ChSender(tx);
+    visitor.value(&mut jevstream, JsonPath::new(), 0, &mut tx_sender).unwrap_or_else(|_| println!("uhoh"));
+    // inner tx dropped automatically here
+  }
+
+  // done with the weird hoops
+  drop(tx);
+  cons_thr.join().unwrap();
+}
+
 
 /**
 Converts a path in the form `images/23423/image_name` to
@@ -231,6 +287,8 @@ fn filename_of_path<'a>(send_path : &'a crate::sendpath::SendPath, ext : &'a Str
     .chain(once(ext.as_str()))
     .intersperse(".")
     .collect::<String>()
+    .replace(" ","")
+    .replace("/","_")
     .into()
 }
 

@@ -23,7 +23,7 @@ fn main() {
       let mut jevstream = parser::JsonEvents::new(istream);
       schema::schema(&mut jevstream);
     }
-    // This are POC to see that the rest of the handlers and visitors work.
+    // This is PoC to see that the rest of the handlers and visitors work.
     ["-p", rst @ ..] => {
       let istream = jch::make_readable(rst);
       let mut jevstream = parser::JsonEvents::new(istream);
@@ -31,8 +31,8 @@ fn main() {
       // just use a (mostly) simple function wrapper
       // which just outputs the value if sent.
       let sender = &mut fn_snd::FnSnd(|ev| Ok::<(),()>(println!("fn_snd {ev:?}")));
-      // always returns true for path matches
-      let visitor = plain::Plain;
+      // Sends things as copies rather than references, and always returns true for path matches.
+      let visitor = plain::Plain(|_| true);
 
       use handler::Handler;
       visitor
@@ -61,10 +61,10 @@ fn main() {
       channel::channels(&mut jevstream)
     }
     ["-h"] => println!("-z file for sizes, -s file for schema"),
-    [ dir, rst] => shredder::shred(&std::path::PathBuf::from(dir), &[*rst]),
-    [ dir, rst @ ..] => shredder::shred(&std::path::PathBuf::from(dir), rst),
+    [ "-r", "-c", dir, rst @ ..] => shredder::channel_shred(&std::path::PathBuf::from(dir), rst),
+    [ "-r", dir, rst @ ..] => shredder::shred(&std::path::PathBuf::from(dir), rst),
     _ =>  {
-      println!("-s [file] for schema\n-p [file] for plain\n-v [file] for valuer\n-c [file] for channel\nTODO resurrect shredder");
+      println!("-s [file] for schema\n-p [file] for plain\n-v [file] for valuer\n-c [file] for channel\n-r <dir> for shredder\n-r -c [dir] for fast shredder");
       exit(1)
     }
   }

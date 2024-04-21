@@ -33,6 +33,12 @@ impl From<&JsonPath> for SendPath {
   }
 }
 
+impl From<&SendPath> for SendPath {
+  fn from(sendpath : &SendPath) -> Self {
+    Self(sendpath.0.clone())
+  }
+}
+
 /// This produces jq-equivalent notation
 impl std::fmt::Octal for SendPath {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {

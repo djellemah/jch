@@ -2,6 +2,8 @@
 The Sender trait.
 
 The Handler will ultimately send this event to an implementation of Sender.
+
+Parameterised because it might need to be sent over a channel, or it might not.
 */
 
 use crate::sendpath::SendPath;
@@ -19,6 +21,6 @@ pub enum Event<V> {
 
 /// This can be implemented by anything from a function call to a channel.
 pub trait Sender<Event> {
-  type SendError;
+  type SendError : std::fmt::Debug;
   fn send<'a>(&mut self, ev: Box<Event>) -> Result<(), Self::SendError>;
 }
