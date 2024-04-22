@@ -12,7 +12,7 @@ Currently only outputs the schema of a json file, in a non-standard format.
 
 Is designed in a modular way so you can use it as a base for filtering json. Somewhat like `jq`.
 
-Might grow into some kind of path-filtering languages, like jsonpath or xpath.
+Might grow into some kind of path-filtering language, like jsonpath or xpath.
 
 # Download a release
 
@@ -32,7 +32,7 @@ cargo build --release
 ``` bash
 curl \
 https://raw.githubusercontent.com/json-iterator/test-data/master/large-file.json \
-| target/release/jch -s`
+| target/release/jch -s
 ```
 
 will output
