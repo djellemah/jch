@@ -8,6 +8,7 @@ use crate::handler::Handler;
 use crate::jsonpath::*;
 use crate::sender;
 use crate::sendpath::SendPath;
+use crate::plain::JsonEvent;
 
 pub struct ShredWriter<V> {
   dir : std::path::PathBuf,
@@ -92,8 +93,8 @@ fn encode_to_msgpack
 (path : &'a Path, ev : &'b crate::plain::JsonEvent<Stringish>)
 -> sender::Event<Vec<u8>>
 where
-  Stringish : AsRef<str> + std::fmt::Display,
-  crate::sendpath::SendPath : for<'sp> From<&'sp Path>,
+  Stringish : AsRef<[u8]> + AsRef<str> + std::fmt::Display,
+  crate::sendpath::SendPath : for<'sp> From<&'sp Path>
 {
   // store msgpack bytes in here
   let mut buf = vec![];
@@ -102,7 +103,7 @@ where
   use crate::plain::JsonEvent;
   match ev {
     JsonEvent::String(v) => {
-      match rmp::encode::write_str(&mut buf, v.as_ref() ) {
+      match rmp::encode::write_str (&mut buf, v.as_ref() ) {
         Ok(()) => Event::Value(SendPath::from(path), buf),
         Err(err) => Event::Error(format!("msgpack error {err:?}")),
       }
@@ -172,13 +173,13 @@ impl Handler for MsgPacker {
   }
 
   // encode values as MessagePack, then send to shredder
-  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
+  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Snd)
   -> Result<(),<Snd as sender::Sender<sender::Event<<MsgPacker as Handler>::V<'_>>>>::SendError>
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
   where Snd : for <'x> sender::Sender<sender::Event<Self::V<'x>>>
   {
     if !self.match_path(&path) { return Ok(()) }
-    let send_event = encode_to_msgpack::<JsonPath,String>(path, &crate::plain::JsonEvent::from(ev));
+    let send_event = encode_to_msgpack::<JsonPath,String>(path, &ev);
     // OPT must this really be in a box?
     tx
       .send(Box::new(send_event))

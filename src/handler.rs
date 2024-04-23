@@ -6,7 +6,8 @@ use crate::sender::Sender;
 use crate::sender::Event;
 use crate::jsonpath::*;
 
-use json_event_parser::JsonEvent;
+// use json_event_parser::JsonEvent;
+use crate::plain::JsonEvent;
 
 /**
 The Handler trait.
@@ -27,7 +28,7 @@ pub trait Handler {
   fn match_path(&self, path : &JsonPath) -> bool;
 
   /// This will be called for each leaf value, along with its path.
-  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &JsonEvent, tx : &mut Snd)
+  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
   where
@@ -92,7 +93,7 @@ pub trait Handler {
         EndArray => panic!("should never receive EndArray {parents}"),
 
         StartObject => self.value(jevs, parents.clone(), depth+1, tx),
-        ObjectKey(key) => self.value(jevs, parents.push_back((*key).into()), depth+1, tx),
+        ObjectKey(ref key) => self.value(jevs, parents.push_back(key.into()), depth+1, tx),
         EndObject => return Ok(()),
 
         // fin

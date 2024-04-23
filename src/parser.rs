@@ -2,6 +2,10 @@
 The interface to the parser, currently json-event-parser.
 */
 
+use std::cell::RefCell;
+
+use crate::plain;
+
 pub struct JsonCounter(countio::Counter<Box<dyn std::io::BufRead>>);
 
 impl std::io::Read for JsonCounter {
@@ -22,55 +26,57 @@ impl std::io::BufRead for JsonCounter {
 
 // Source of Json parse events, ie the json parser
 pub struct JsonEvents {
-  reader : json_event_parser::JsonReader<JsonCounter>,
+  reader : RefCell<json_event_parser::FromReadJsonReader<JsonCounter>>,
   _buf : Vec<u8>,
 }
 
-// Sheesh. Trying to this with lifetimes is *severe* PITA
-macro_rules! eventicize {
-  ($obj:expr, $event_result:expr) => {
-    match $event_result {
-      Ok(json_event_parser::JsonEvent::Eof) => None,
-      Ok(jev) => Some(jev),
-      Err(err) => {
-        // this requires a hack in json_event_parser
-        let counter : &JsonCounter = &$obj.reader.reader;
-        let pos = counter.0.reader_bytes();
-        // try to generate some surrounding json context for the error message
-        let mut buf = [0; 80];
-        use std::io::Read;
-        let more = match $obj.reader.reader.read(&mut buf) {
-          Ok(n) => String::from_utf8_lossy(&buf[0..n]).to_string(),
-          Err(err) => format!("{err:?}"),
-        };
+fn fetch_err_context(err : json_event_parser::ParseError, JsonCounter(counter) : &mut JsonCounter) {
+  let pos = counter.reader_bytes();
+  // try to generate some surrounding json context for the error message
+  let mut buf = [0; 80];
+  use std::io::Read;
+  let more = match counter.read(&mut buf) {
+    Ok(n) => String::from_utf8_lossy(&buf[0..n]).to_string(),
+    Err(err) => format!("{err:?}"),
+  };
 
-        eprintln!("pos {pos} {err} followed by {more}");
+  format!("pos {pos} {err} followed by {more}");
+}
 
-        // Some(json_event_parser::JsonEvent::Null)
-        None
-      }
-    }
+impl<'l> JsonEvents {
+  pub fn new(istream : Box<dyn std::io::BufRead>) -> Self {
+    let counter = JsonCounter(countio::Counter::new(istream));
+    let reader = json_event_parser::FromReadJsonReader::new(counter);
+    Self{reader: RefCell::new(reader), _buf: vec![]}
+  }
+
+  // pub fn next_buf<'a>(&'a self, _buf : &mut Vec<u8>) -> Option<json_event_parser::JsonEvent<'a>> {
+  pub fn next_buf<'a>(&'a self, _buf : &mut Vec<u8>) -> Option<plain::JsonEvent<String>> {
+    let mut binding = self.reader.borrow_mut();
+    let jep_event_result = binding.read_next_event().expect("TODO fixme");
+    let event_result = plain::JsonEvent::from(jep_event_result);
+    Some(event_result)
+    // eventicize!(self, event_result)
+    // // convert to a type with a self-contained buffer
+    // if let Some(ref json_event) = eventicize!(self, event_result) {
+    //   Some(crate::plain::JsonEvent::from(json_event))
+    // } else {
+    //   None
+    // }
   }
 }
 
-impl JsonEvents {
-  pub fn new(istream : Box<dyn std::io::BufRead>) -> Self {
-    let counter = JsonCounter(countio::Counter::new(istream));
-    let reader = json_event_parser::JsonReader::from_reader(counter);
-    Self{reader, _buf: vec![]}
-  }
+impl Iterator for JsonEvents {
+  type Item = crate::plain::JsonEvent<String>;
 
-  // This is an attempt to use JsonEvents as an iterator.
-  // But it's a severe PITA to specify this as an implementation of Iterator,
-  // and it's impossible to pass errors back.
-  #[allow(dead_code)]
-  fn next(&mut self) -> Option<json_event_parser::JsonEvent> {
-    let event_result = self.reader.read_event(&mut self._buf);
-    eventicize!(self, event_result)
-  }
-
-  pub fn next_buf<'a, 'b>(&'a mut self, buf : &'b mut Vec<u8>) -> Option<json_event_parser::JsonEvent<'b>> {
-    let event_result = self.reader.read_event(buf);
-    eventicize!(self, event_result)
+  fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+    // read the event which contains a reference to the buffer in self._buf
+    match self.reader.borrow_mut().read_next_event() {
+        Ok(jev) => Some(plain::JsonEvent::from(jev)),
+        Err(err) => {
+          fetch_err_context(err, self.reader.borrow_mut().reader());
+          None
+        }
+    }
   }
 }

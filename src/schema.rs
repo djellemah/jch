@@ -11,6 +11,7 @@ use crate::handler::Handler;
 use crate::sender::Sender;
 use crate::jsonpath::JsonPath;
 use crate::sender::Event;
+use crate::plain::JsonEvent;
 
 /*
 tree is a map of path => [(type, count)]
@@ -142,14 +143,12 @@ pub struct EventConverter();
 impl EventConverter {
   pub fn new() -> Self {Self()}
 
-  fn collect_type<'a>(&self, _path : &JsonPath, ev : &json_event_parser::JsonEvent)
+  fn collect_type<'a>(&self, _path : &JsonPath, ev : &JsonEvent<String>)
   -> SchemaType
   {
-    use json_event_parser::JsonEvent;
-
     // So the big question is: should this translation happen: in the parser thread; or in the processor thread?
     match ev {
-      &JsonEvent::String(v) => {
+      JsonEvent::String(v) => {
         if v == "NaN" {
           SchemaType::Number(NumberType::Float(f64::NAN,f64::NAN))
         } else {
@@ -157,8 +156,8 @@ impl EventConverter {
         }
       }
 
-      &JsonEvent::Number(v) => {
-        let number_value : serde_json::Number = match serde_json::from_str(v) {
+      JsonEvent::Number(v) => {
+        let number_value : serde_json::Number = match serde_json::from_str(&v) {
           Ok(n) => n,
           Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
@@ -173,12 +172,12 @@ impl EventConverter {
           let f = number_value.as_f64().unwrap();
           SchemaType::Number(NumberType::Float(f64::min(f,0.0),f64::max(f, 0.0)))
         } else {
-          SchemaType::Unknown(v.into())
+          SchemaType::Unknown(v.to_string())
         }
       }
 
-      &JsonEvent::Boolean(_v) => SchemaType::Boolean,
-      &JsonEvent::Null => SchemaType::Null,
+      JsonEvent::Boolean(_v) => SchemaType::Boolean,
+      JsonEvent::Null => SchemaType::Null,
       ev => SchemaType::Unknown(format!("{ev:?}")),
     }
   }
@@ -190,7 +189,7 @@ impl Handler for EventConverter {
   // collect all paths
   fn match_path(&self, _json_path : &JsonPath) -> bool {true}
 
-  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &json_event_parser::JsonEvent, tx : &mut Snd)
+  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<EventConverter as Handler>::V<'_>>>>::SendError>
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
   where Snd : for <'x> Sender<Event<Self::V<'x>>>

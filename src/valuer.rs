@@ -5,6 +5,7 @@ use crate::handler::Handler;
 use crate::jsonpath::JsonPath;
 use crate::sender::Event;
 use crate::sender::Sender;
+use crate::plain::JsonEvent;
 
 // for sending the same Path representation over the channel as the one that's constructed
 #[allow(unused_macros)]
@@ -48,11 +49,11 @@ impl Handler for Valuer
 
   // convert the string contained in the JsonEvent into a serde_json::Value
   // and call tx.send with that.
-  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, jev : &json_event_parser::JsonEvent<'a>, tx : &mut Snd)
+  fn maybe_send_value<Snd>(&self, path : &JsonPath, jev : &JsonEvent<String>, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
-    use json_event_parser::JsonEvent::*;
+    use JsonEvent::*;
     if !self.match_path(&path) {
       return package!(tx,0,path)
     }
