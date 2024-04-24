@@ -191,7 +191,7 @@ pub fn shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
 where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 {
   let istream = crate::make_readable(maybe_readable_args);
-  let mut jevstream = parser::JsonEvents::new(istream);
+  let mut jevstream = parser::JsonEventParser::new(istream);
 
   // write events as Dremel-style record shred columns
   let mut writer = crate::shredder::ShredWriter::new(&dir, "mpk");
@@ -238,7 +238,7 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
   {
     use crate::channel::ChSender;
     let istream = crate::make_readable(maybe_readable_args);
-    let mut jevstream = parser::JsonEvents::new(istream);
+    let mut jevstream = parser::JsonEventParser::new(istream);
 
     let tx = tx.clone();
     // This will send `sender::Event<plain::JsonEvent>` over the channel

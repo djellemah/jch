@@ -20,6 +20,7 @@ where T : AsRef<[u8]> // because we want storage
     EndObject,
     ObjectKey(T),
     Eof,
+    Error{line : u64, col : u64, message: T},
 }
 
 #[test]
@@ -59,53 +60,72 @@ where T : AsRef<[u8]> + From<String> //+ ToOwned<Owned=T> + for<'b> std::convert
 
 #[test]
 fn from_string() {
-  let cow = std::borrow::Cow::Borrowed("distring");
+  let cow = std::borrow::Cow::from("distring");
   let jev = json_event_parser::JsonEvent::String(cow);
   let ev : JsonEvent<String> = JsonEvent::from(jev);
-  // let expected = String::from("distring".as_bytes());
   let expected = String::from("distring");
   assert_eq!(ev, JsonEvent::String(expected))
 }
 
 #[test]
 fn from_vec() {
-  let cow = std::borrow::Cow::Borrowed("distring");
+  let cow = std::borrow::Cow::from("distring");
   let jev = json_event_parser::JsonEvent::String(cow);
   let ev : JsonEvent<Vec<u8>> = JsonEvent::from(jev);
   let expected = Vec::from("distring".as_bytes());
   assert_eq!(ev, JsonEvent::String(expected))
 }
 
-// Source of Json parse events, ie the json parser
-pub struct JsonEvents(json_event_parser::FromReadJsonReader<Box<dyn std::io::BufRead>>);
+/// Source of Json parse events, ie the json parser
+/// All interfaces with the parser must happen through this.
+pub trait JsonEvents<'l, Stringish>
+where Stringish : 'l + AsRef<[u8]> + From<String> // because we want storage + conversion from Cow<'_,str>
+{
+   fn next_event<'a>(&'a mut self) -> Result<JsonEvent<Stringish>, Box<dyn std::error::Error>>;
+}
 
-impl JsonEvents {
+/// Source of json events from json_event_parser
+pub struct JsonEventParser(json_event_parser::FromReadJsonReader<Box<dyn std::io::BufRead>>);
+
+impl JsonEventParser {
   pub fn new(istream : Box<dyn std::io::BufRead>) -> Self {
     Self(json_event_parser::FromReadJsonReader::new(istream))
   }
+}
 
-  pub fn next_buf<'a>(&'a mut self) -> Option<JsonEvent<String>> {
+impl<'l, Stringish> JsonEvents<'l, Stringish> for JsonEventParser
+where
+Stringish : std::convert::AsRef<[u8]> + std::convert::From<std::string::String> + 'l
+{
+  fn next_event<'a>(&'a mut self) -> Result<JsonEvent<Stringish>, Box<(dyn std::error::Error + 'static)>> {
+    use json_event_parser::ParseError;
     match self.0.read_next_event() {
-      Ok(ref jep_event) => Some(JsonEvent::from(jep_event)),
-      Err(err) => {
-        eprintln!("{err:?}");
-        None
+      Ok(ref jep_event) => Ok(JsonEvent::from(jep_event)),
+      Err(ParseError::Io(err)) => {
+        Err(format!("{err:?}").into())
+      }
+      Err(ParseError::Syntax(syntax_error)) => {
+        use std::ops::Range;
+        // use json_event_parser::SyntaxError;
+        use json_event_parser::TextPosition;
+
+        // can't match because private fields
+        // json_event_parser::SyntaxError{location, message}
+        let Range{start, ..} : Range<TextPosition> = syntax_error.location();
+        let msg : String = syntax_error.message().into();
+        Ok(JsonEvent::Error{line : start.line, col : start.column, message: msg.into()})
       }
     }
   }
 }
 
-impl Iterator for JsonEvents {
+impl Iterator for JsonEventParser {
   type Item = JsonEvent<String>;
 
   fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-    // read the event which contains a reference to the buffer in self._buf
-    match self.0.read_next_event() {
-      Ok(jev) => Some(JsonEvent::from(jev)),
-      Err(err) => {
-        eprintln!("{err:?}");
-        None
-      }
+    match self.next_event() {
+     Ok(jev) => Some(jev),
+     err => panic!("{err:?}"),
     }
   }
 }

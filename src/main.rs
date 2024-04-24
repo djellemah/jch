@@ -20,13 +20,13 @@ fn main() {
     ["-s", "-z"] => schema::sizes(&mut std::io::stdout()).unwrap(),
     ["-s", rst @ ..] => {
       let istream = jch::make_readable(rst);
-      let mut jevstream = parser::JsonEvents::new(istream);
+      let mut jevstream = parser::JsonEventParser::new(istream);
       schema::schema(&mut jevstream);
     }
     // This is PoC to see that the rest of the handlers and visitors work.
     ["-p", rst @ ..] => {
       let istream = jch::make_readable(rst);
-      let mut jevstream = parser::JsonEvents::new(istream);
+      let mut jevstream = parser::JsonEventParser::new(istream);
 
       // just use a (mostly) simple function wrapper
       // which just outputs the value if sent.
@@ -43,7 +43,7 @@ fn main() {
     }
     ["-v", rst @ ..] => {
       let istream = jch::make_readable(rst);
-      let mut jevstream = parser::JsonEvents::new(istream);
+      let mut jevstream = parser::JsonEventParser::new(istream);
 
       // accept all paths, and convert leafs to serde_json::Value
       let visitor = valuer::Valuer(|_path| true);
@@ -58,7 +58,7 @@ fn main() {
     }
     ["-c", rst @ ..] => {
       let istream = jch::make_readable(rst);
-      let mut jevstream = parser::JsonEvents::new(istream);
+      let mut jevstream = parser::JsonEventParser::new(istream);
       // producer reads file and converts to serde_json events, consumer just receives them.
       channel::channels(&mut jevstream)
     }

@@ -83,6 +83,7 @@ impl Handler for Valuer
       EndObject => todo!(),
       ObjectKey(_) => todo!(),
       Eof => todo!(),
+      err@ Error{..} => todo!("{err:?}"),
     }
   }
 }

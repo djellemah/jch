@@ -324,7 +324,7 @@ impl Sender<Event<SchemaType>> for SchemaCollector {
   }
 }
 
-pub fn schema(jev : &mut JsonEvents) {
+pub fn schema(jev : &mut dyn JsonEvents<String>) {
   // collect and display schema of input
   let mut collector = SchemaCollector::new();
 

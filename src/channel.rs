@@ -18,7 +18,7 @@ impl<T : Clone + std::fmt::Debug> Sender<Event<T>> for ChSender<T> {
 }
 
 // T = serde_json::Value, for example
-pub fn channels(jev : &mut JsonEvents) {
+pub fn channels(jev : &mut dyn JsonEvents<String>) {
   // this seems to be about optimal wrt performance
   const CHANNEL_SIZE : usize = 8192;
   let (tx, rx) = std::sync::mpsc::sync_channel::<Event<serde_json::Value>>(CHANNEL_SIZE);
