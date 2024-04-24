@@ -28,9 +28,9 @@ pub fn channels(jev : &mut dyn JsonEvents<String>) {
     while let Ok(event) = rx.recv() {
       match event  {
         Event::Path(depth,path) => println!("{depth}:{}", path),
-        Event::Finished => {println!("Event::Finished"); break},
         Event::Value(p,v) => println!("{p} => {v}"),
-        Event::Error(_) => todo!(),
+        Event::Error(err) => println!("Event::Error {err}"),
+        Event::Finished => {println!("Event::Finished"); break},
       }
     }
   });

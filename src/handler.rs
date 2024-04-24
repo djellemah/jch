@@ -44,7 +44,7 @@ pub trait Handler {
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
-    for <'x> <Self as Handler>::V<'x>: std::fmt::Debug
+    for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
   {
     let mut index = 0;
     loop {
@@ -65,16 +65,14 @@ pub trait Handler {
             ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
             EndObject => panic!("should never receive EndObject {parents}"),
 
-            Eof => tx.send(Box::new(Event::Finished)),
-            err => todo!("{err:?}"),
+            Eof => break tx.send(Box::new(Event::Finished)),
+            err@ Error{..} => tx.send(Box::new(Event::Error(format!("{err}"))))
           };
           if let Err(_) = res { break res };
           index += 1;
         },
-        err => {
-          tx.send(Box::new(Event::Finished)).unwrap();
-          panic!("{err:?}");
-        }
+        // This means some kind of io error, ie not a json parse error. So bail out.
+        Err(err) => break tx.send(Box::new(Event::Error(format!("{err}")))),
       }
     }
   }
@@ -103,15 +101,13 @@ pub trait Handler {
             EndObject => return Ok(()),
 
             // fin
-            Eof => tx.send(Box::new(Event::Finished)),
-            err => todo!("{err:?}"),
+            Eof => break tx.send(Box::new(Event::Finished)),
+            err@ Error{..} => tx.send(Box::new(Event::Error(format!("{err}")))),
           };
           if let Err(_) = res { break res };
         },
-        err => {
-          tx.send(Box::new(Event::Finished)).unwrap();
-          panic!("{err:?}");
-        }
+        // This means some kind of io error, ie not a json parse error. So bail out.
+        Err(err) => break tx.send(Box::new(Event::Error(format!("{err}")))),
       };
     }
   }
@@ -141,10 +137,11 @@ pub trait Handler {
 
           // fin
           Eof => tx.send(Box::new(Event::Finished)),
-          err => todo!("{err:?}"),
+          err@ Error{..} => tx.send(Box::new(Event::Error(format!("{err}")))),
         }
       },
-      _ => tx.send(Box::new(Event::Finished)),
+      // This means some kind of io error, ie not a json parse error. So bail out.
+      Err(err) => tx.send(Box::new(Event::Error(format!("{err}")))),
     }
   }
 }

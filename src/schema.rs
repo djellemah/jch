@@ -282,8 +282,11 @@ impl SchemaCollector {
             }
           }
         }
-        Event::Finished => todo!("schema Event::Finished"),
-        Event::Error(_) => todo!("schema Event::Error"),
+      }
+      Event::Finished => (),
+      // print these as they happen.
+      // TODO maybe collect them all in the schema?
+      Event::Error(err) => println!("{err}"),
     }
   }
 }

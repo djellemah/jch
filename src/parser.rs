@@ -23,6 +23,16 @@ where T : AsRef<[u8]> // because we want storage
     Error{line : u64, col : u64, message: T},
 }
 
+impl<T: std::convert::AsRef<[u8]> + std::fmt::Debug + std::fmt::Display> std::fmt::Display for JsonEvent<T> {
+  fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+    if let Self::Error{line, col, message} = &self {
+      write!(fmt, "error at {}:{}: {message}", line+1, col+1) // because line and col numbers from the parser are 0-based
+    } else {
+      write!(fmt, "{self:?}")
+    }
+  }
+}
+
 #[test]
 fn create() {
   let _je = JsonEvent::String("hello".to_string());

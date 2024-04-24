@@ -4,7 +4,7 @@ use crate::sender::Sender;
 // This is a lot of machinery just to call a function :-\
 pub struct FnSnd<Event,Error>(pub fn(Event) -> Result<(), Error>);
 
-impl<Event : std::fmt::Debug, ErrorType : std::fmt::Debug> Sender<Event> for FnSnd<Event,ErrorType> {
+impl<Event : std::fmt::Debug, ErrorType : std::fmt::Debug + std::fmt::Display> Sender<Event> for FnSnd<Event,ErrorType> {
   type SendError = ErrorType;
 
   // Here's where we actually do something with the json event

@@ -21,8 +21,8 @@ pub enum Event<V>{
 /// This can be implemented by anything from a function call to a channel.
 pub trait Sender<Ev>
 where
-  Ev : std::fmt::Debug,
+  Ev : std::fmt::Debug
 {
-  type SendError : std::fmt::Debug;
+  type SendError : std::fmt::Debug + std::fmt::Display;
   fn send<'a>(&mut self, ev: Box<Ev>) -> Result<(), Self::SendError>;
 }

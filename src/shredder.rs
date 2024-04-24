@@ -59,7 +59,7 @@ impl<V> ShredWriter<V>
   }
 }
 
-impl<'a, V: AsRef<[u8]>> ShredWriter<V>
+impl<'a, V: AsRef<[u8]> + std::fmt::Debug> ShredWriter<V>
 {
   /// Writes events from our event source, whose ultimate source is a streaming parser.
   pub fn write_msgpack_value(&mut self, ev : &'a sender::Event<V>)
@@ -73,8 +73,8 @@ impl<'a, V: AsRef<[u8]>> ShredWriter<V>
         file.write_all(v.as_ref()).unwrap();
       },
       Event::Path(_depth,_path) => (),
-      Event::Finished => (),
-      &Event::Error(_) => todo!(),
+      Event::Finished => todo!("Event::Finished"),
+      Event::Error(_) => todo!("Event::Error"),
     }
   }
 }
@@ -226,6 +226,8 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
         use sender::Event;
         let msgpacked_event = match event {
           Event::Value(path,ev) => encode_to_msgpack::<SendPath,String>(path, ev),
+          Event::Error(msg) => {println!("{msg}"); continue},
+          Event::Finished => break,
           err => todo!("{err:?}"),
         };
 
