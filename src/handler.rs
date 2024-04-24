@@ -47,8 +47,7 @@ pub trait Handler {
     for <'x> <Self as Handler>::V<'x>: std::fmt::Debug
   {
     let mut index = 0;
-    let mut buf : Vec<u8> = vec![];
-    while let Some(ref ev) = jevs.next_buf(&mut buf) {
+    while let Some(ref ev) = jevs.next_buf() {
       // NOTE rpds persistent vector
       let loop_parents = parents.push_back(index.into());
       use JsonEvent::*;
@@ -79,8 +78,7 @@ pub trait Handler {
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
     for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
   {
-    let mut buf : Vec<u8> = vec![];
-    while let Some(ref ev) = jevs.next_buf(&mut buf) {
+    while let Some(ref ev) = jevs.next_buf() {
       use JsonEvent::*;
       let res = match &ev {
         // ok we have a leaf, so emit the value and path.
@@ -109,9 +107,8 @@ pub trait Handler {
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
     for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
   {
-    let mut buf : Vec<u8> = vec![];
     // json has exactly one top-level object
-    if let Some(ref ev) = jevs.next_buf(&mut buf) {
+    if let Some(ref ev) = jevs.next_buf() {
       use JsonEvent::*;
       match ev {
         // ok we have a leaf, so emit the value and path
