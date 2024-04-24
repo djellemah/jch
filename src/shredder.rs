@@ -26,8 +26,14 @@ impl<V> ShredWriter<V>
     S : AsRef<str> + std::fmt::Display,
     P : AsRef<std::path::Path>
   {
+    let dir = std::path::PathBuf::from(dir.as_ref());
+    if !dir.is_dir() {
+      println!("{dir:?} must be a directory.");
+      // Must use exit here otherwise the other thread doesn't shut down.
+      std::process::exit(1)
+    }
     Self {
-      dir: std::path::PathBuf::from(dir.as_ref()),
+      dir,
       files: std::collections::hash_map::HashMap::new(),
       ext: ext.to_string(),
       _event_marker : std::marker::PhantomData,
@@ -208,6 +214,10 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 pub fn channel_shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
 where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 {
+  // Create ShredWriter first, because it might want to stop things.
+  let dir = dir.clone();
+  let mut writer : ShredWriter<Vec<u8>> = ShredWriter::new(&dir, "mpk");
+
   use crate::plain::Plain;
   // The event that will be sent across the channel
   type ChEvent<'a> = sender::Event<<Plain as Handler>::V<'a>>;
@@ -218,14 +228,12 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 
   // consumer thread
   let cons_thr = {
-    let dir = dir.clone();
     // use crate::shredder::ShredWriter;
     std::thread::Builder::new().name("jch recv".into()).spawn(move || {
-    let mut writer : ShredWriter<Vec<u8>> = ShredWriter::new(&dir, "mpk");
       while let Ok(ref event) = rx.recv() {
         use sender::Event;
         let msgpacked_event = match event {
-          Event::Value(path,ev) => encode_to_msgpack::<SendPath,String>(path, ev),
+          Event::Value(path,jev) => encode_to_msgpack::<SendPath,String>(path, jev),
           Event::Error(msg) => {println!("{msg}"); continue},
           Event::Finished => break,
           err => todo!("{err:?}"),
