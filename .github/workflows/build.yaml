@@ -17,7 +17,7 @@ jobs:
       # TODO use gh release list | grep -q ${{ github.ref_name }}
       # to check that it's safe to run release delete
       run: |
-        gh release delete ${{ github.ref_name }} --yes; true # so it doesn't fail when the release doesn't exist
+        gh release delete ${{ github.ref_name }} --yes || true # so it doesn't fail when the release doesn't exist
         gh release create --latest ${{ github.ref_name }}
       env:
         GH_TOKEN: ${{ secrets.ACTION_TOKEN }}
