@@ -66,29 +66,30 @@ impl std::fmt::Octal for Step {
   }
 }
 
-// TODO these are all AsRef
+impl From<IndexInteger> for Step {
+  fn from(s: IndexInteger) -> Self { Self::Index(s) }
+}
+
+// These are all effectively AsRef
+// But E0119 prevents implementing them using a trait.
 impl From<&str> for Step {
-  fn from(s: &str) -> Self { Self::Key(s.to_string()) }
+  fn from(s: &str) -> Self { Self::Key(s.into()) }
 }
 
 impl From<String> for Step {
-  fn from(s: String) -> Self { Self::Key(s) }
+  fn from(s: String) -> Self { Self::Key(s.into()) }
 }
 
 impl From<&String> for Step {
   fn from(s: &String) -> Self { Self::Key(s.into()) }
 }
 
-impl From<IndexInteger> for Step {
-  fn from(s: IndexInteger) -> Self { Self::Index(s) }
-}
-
 impl From<std::borrow::Cow<'_, str>> for Step {
-  fn from(value: std::borrow::Cow<'_, str>) -> Self { Self::Key(value.to_string()) }
+  fn from(value: std::borrow::Cow<'_, str>) -> Self { Self::Key(value.into()) }
 }
 
 impl From<&std::borrow::Cow<'_, str>> for Step {
-  fn from(value: &std::borrow::Cow<'_, str>) -> Self { Self::Key(value.to_owned().to_string()) }
+  fn from(value: &std::borrow::Cow<'_, str>) -> Self { Self::Key(value.to_owned().into()) }
 }
 
 // https://docs.rs/rpds/latest/rpds/list/struct.List.html
