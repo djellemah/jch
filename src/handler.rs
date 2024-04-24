@@ -40,92 +40,111 @@ pub trait Handler {
   /// objects are sent to object(...)
   //
   // depth: parents.len < depth because depth additionally counts StartObject and StartArray
-  fn array<'a, Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : usize, tx : &mut Snd )
+  fn array<'a, Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd )
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
     for <'x> <Self as Handler>::V<'x>: std::fmt::Debug
   {
     let mut index = 0;
-    while let Some(ref ev) = jevs.next_buf() {
-      // NOTE rpds persistent vector
-      let loop_parents = parents.push_back(index.into());
-      use JsonEvent::*;
-      let res = match ev {
-        // ok we have a leaf, so match path then send value
-        String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
+    loop {
+      match jevs.next_event() {
+        Ok(ref ev) =>{
+          // NOTE rpds persistent vector
+          let loop_parents = parents.push_back(index.into());
+          use JsonEvent::*;
+          let res = match ev {
+            // ok we have a leaf, so match path then send value
+            String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
-        StartArray => self.array(jevs, loop_parents, depth+1, tx),
-        EndArray => return Ok(()), // do not send path, this is +1 past the end of the array
+            StartArray => self.array(jevs, loop_parents, depth+1, tx),
+            EndArray => return Ok(()), // do not send path, this is +1 past the end of the array
 
-        // ObjectKey(key) => find_path(jevs, loop_parents.push_front(key.into()), depth+1, tx),
-        StartObject => self.object(jevs, loop_parents, depth+1, tx),
-        ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
-        EndObject => panic!("should never receive EndObject {parents}"),
+            // ObjectKey(key) => find_path(jevs, loop_parents.push_front(key.into()), depth+1, tx),
+            StartObject => self.object(jevs, loop_parents, depth+1, tx),
+            ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
+            EndObject => panic!("should never receive EndObject {parents}"),
 
-        Eof => tx.send(Box::new(Event::Finished)),
-      };
-      if let Err(_) = res { return res };
-      index += 1;
+            Eof => tx.send(Box::new(Event::Finished)),
+            err => todo!("{err:?}"),
+          };
+          if let Err(_) = res { break res };
+          index += 1;
+        },
+        err => {
+          tx.send(Box::new(Event::Finished)).unwrap();
+          panic!("{err:?}");
+        }
+      }
     }
-    Ok(())
   }
 
   /// handle objects.
-  fn object<'a, Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : usize, tx : &mut Snd )
+  fn object<'a, Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd )
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
     for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
   {
-    while let Some(ref ev) = jevs.next_buf() {
-      use JsonEvent::*;
-      let res = match &ev {
-        // ok we have a leaf, so emit the value and path.
-        // no need to shunt this through value(...)
-        String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
+    loop {
+      match jevs.next_event() {
+        Ok(ev) => {
+          use JsonEvent::*;
+          let res = match &ev {
+            // ok we have a leaf, so emit the value and path.
+            // no need to shunt this through value(...)
+            String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
-        StartArray => self.array(jevs, parents.clone(), depth+1, tx),
-        EndArray => panic!("should never receive EndArray {parents}"),
+            StartArray => self.array(jevs, parents.clone(), depth+1, tx),
+            EndArray => panic!("should never receive EndArray {parents}"),
 
-        StartObject => self.value(jevs, parents.clone(), depth+1, tx),
-        ObjectKey(ref key) => self.value(jevs, parents.push_back(key.into()), depth+1, tx),
-        EndObject => return Ok(()),
+            StartObject => self.value(jevs, parents.clone(), depth+1, tx),
+            ObjectKey(ref key) => self.value(jevs, parents.push_back(key.into()), depth+1, tx),
+            EndObject => return Ok(()),
 
-        // fin
-        Eof => tx.send(Box::new(Event::Finished)),
+            // fin
+            Eof => tx.send(Box::new(Event::Finished)),
+            err => todo!("{err:?}"),
+          };
+          if let Err(_) = res { break res };
+        },
+        err => {
+          tx.send(Box::new(Event::Finished)).unwrap();
+          panic!("{err:?}");
+        }
       };
-      if let Err(_) = res { return res };
     }
-    Ok(())
   }
 
   /// Handle String Number Boolean Null (ie non-recursive)
-  fn value<'a,Snd>(&self, jevs : &mut JsonEvents, parents : JsonPath, depth : usize, tx : &mut Snd)
+  #[allow(unused_variables)]
+  fn value<'a,Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
     for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
   {
     // json has exactly one top-level object
-    if let Some(ref ev) = jevs.next_buf() {
-      use JsonEvent::*;
-      match ev {
-        // ok we have a leaf, so emit the value and path
-        String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
+    match jevs.next_event() {
+      Ok(ref ev) => {
+        use JsonEvent::*;
+        match ev {
+          // ok we have a leaf, so emit the value and path
+          String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
 
-        StartArray => self.array(jevs, parents, depth+1, tx),
-        EndArray => panic!("should never receive EndArray {parents}"),
+          StartArray => self.array(jevs, parents, depth+1, tx),
+          EndArray => panic!("should never receive EndArray {parents}"),
 
-        StartObject => self.object(jevs, parents, depth+1, tx),
-        ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
-        EndObject => panic!("should never receive EndObject {parents}"),
+          StartObject => self.object(jevs, parents, depth+1, tx),
+          ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
+          EndObject => panic!("should never receive EndObject {parents}"),
 
-        // fin
-        Eof => tx.send(Box::new(Event::Finished)),
-      }
-    } else {
-      tx.send(Box::new(Event::Finished))
+          // fin
+          Eof => tx.send(Box::new(Event::Finished)),
+          err => todo!("{err:?}"),
+        }
+      },
+      _ => tx.send(Box::new(Event::Finished)),
     }
   }
 }
