@@ -8,7 +8,7 @@ use crate::handler::Handler;
 use crate::jsonpath::*;
 use crate::sender;
 use crate::sendpath::SendPath;
-use crate::plain::JsonEvent;
+use crate::parser::JsonEvent;
 
 pub struct ShredWriter<V> {
   dir : std::path::PathBuf,
@@ -90,7 +90,7 @@ impl<V : AsRef<[u8]> + std::fmt::Debug> sender::Sender<sender::Event<V>> for Shr
 /// convert the given json event to a sender event containing messagepack in its buffer
 fn encode_to_msgpack
 <'a, 'b, Path: 'a, Stringish : 'b>
-(path : &'a Path, ev : &'b crate::plain::JsonEvent<Stringish>)
+(path : &'a Path, ev : &'b JsonEvent<Stringish>)
 -> sender::Event<Vec<u8>>
 where
   Stringish : AsRef<[u8]> + AsRef<str> + std::fmt::Display,
@@ -100,7 +100,6 @@ where
   let mut buf = vec![];
 
   use sender::Event;
-  use crate::plain::JsonEvent;
   match ev {
     JsonEvent::String(v) => {
       match rmp::encode::write_str (&mut buf, v.as_ref() ) {

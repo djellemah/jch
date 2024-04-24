@@ -5,7 +5,7 @@ use crate::handler::Handler;
 use crate::jsonpath::JsonPath;
 use crate::sender::Event;
 use crate::sender::Sender;
-use crate::plain::JsonEvent;
+use crate::parser::JsonEvent;
 
 // for sending the same Path representation over the channel as the one that's constructed
 #[allow(unused_macros)]
@@ -36,7 +36,7 @@ macro_rules! package {
   };
 }
 
-/// Converts json_event_parser events to serde_json, and then calls the function.
+/// Converts json events from the parser to serde_json, and then calls the function.
 pub struct Valuer(pub fn(&JsonPath) -> bool);
 
 impl Handler for Valuer

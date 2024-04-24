@@ -11,7 +11,7 @@ use crate::handler::Handler;
 use crate::sender::Sender;
 use crate::jsonpath::JsonPath;
 use crate::sender::Event;
-use crate::plain::JsonEvent;
+use crate::parser::JsonEvent;
 
 /*
 tree is a map of path => [(type, count)]
@@ -341,8 +341,8 @@ pub fn sizes(wr : &mut dyn std::io::Write) -> std::io::Result<()> {
   use std::mem::size_of;
   writeln!(wr, "jsonpath::Step {}", size_of::<crate::jsonpath::Step>())?;
   writeln!(wr, "jsonpath::JsonPath {}", size_of::<crate::jsonpath::JsonPath>())?;
-  writeln!(wr, "plain::JsonEvent<String> {}", size_of::<crate::plain::JsonEvent<String>>())?;
-  writeln!(wr, "plain::JsonEvent<&str> {}", size_of::<crate::plain::JsonEvent<&str>>())?;
+  writeln!(wr, "plain::JsonEvent<String> {}", size_of::<crate::parser::JsonEvent<String>>())?;
+  writeln!(wr, "parser::JsonEvent<&str> {}", size_of::<crate::parser::JsonEvent<&str>>())?;
   writeln!(wr, "sender::Event<Vec<u8>> {}", size_of::<crate::sender::Event<Vec<u8>>>())?;
   writeln!(wr, "sender::Event<&Vec<u8>> {}", size_of::<crate::sender::Event<&Vec<u8>>>())?;
   writeln!(wr, "sender::Event<u8> {}", size_of::<crate::sender::Event<u8>>())?;

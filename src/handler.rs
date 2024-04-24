@@ -2,12 +2,10 @@
 This traverses/handles the incoming json events from the streaming parser.
 */
 use crate::parser::JsonEvents;
+use crate::parser::JsonEvent;
 use crate::sender::Sender;
 use crate::sender::Event;
 use crate::jsonpath::*;
-
-// use json_event_parser::JsonEvent;
-use crate::plain::JsonEvent;
 
 /**
 The Handler trait.
