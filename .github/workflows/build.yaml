@@ -14,8 +14,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: gh create release
+      # TODO use gh release list | grep -q ${{ github.ref_name }}
+      # to check that it's safe to run release delete
       run: |
-        gh release delete ${{ github.ref_name }} --yes
+        gh release delete ${{ github.ref_name }} --yes; true # so it doesn't fail when the release doesn't exist
         gh release create --latest ${{ github.ref_name }}
       env:
         GH_TOKEN: ${{ secrets.ACTION_TOKEN }}
@@ -47,6 +49,7 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     steps:
     - uses: actions/checkout@v4
+    - run: rustup default nightly
     - name: compile
       run: cargo build --release
 
