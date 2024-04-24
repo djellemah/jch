@@ -78,9 +78,9 @@ impl<'a, V: AsRef<[u8]> + std::fmt::Debug> ShredWriter<V>
         use std::io::Write;
         file.write_all(v.as_ref()).unwrap();
       },
-      Event::Path(_depth,_path) => (),
+      Event::Path(_depth,_path) => todo!("Event::Path"),
       Event::Finished => todo!("Event::Finished"),
-      Event::Error(_) => todo!("Event::Error"),
+      Event::Error(_,_) => todo!("Event::Error"),
     }
   }
 }
@@ -110,30 +110,30 @@ where
     JsonEvent::String(v) => {
       match rmp::encode::write_str (&mut buf, v.as_ref() ) {
         Ok(()) => Event::Value(SendPath::from(path), buf),
-        Err(err) => Event::Error(format!("msgpack error {err:?}")),
+        Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
       }
     }
 
     JsonEvent::Number(v) => {
       let number_value : serde_json::Number = match serde_json::from_str(v.as_ref()) {
         Ok(n) => n,
-        Err(msg) => return Event::Error(format!("{v} appears to be not-a-number {msg}")),
+        Err(msg) => return Event::Error(path.into(), format!("{v} appears to be not-a-number {msg}")),
       };
 
       if number_value.is_u64() {
         match rmp::encode::write_uint(&mut buf, number_value.as_u64().unwrap()) {
           Ok(_) => Event::Value(SendPath::from(path), buf),
-          Err(err) => Event::Error(format!("msgpack error {err:?}")),
+          Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
         }
       } else if number_value.is_i64() {
         match rmp::encode::write_sint(&mut buf, number_value.as_i64().unwrap()) {
           Ok(_) => Event::Value(SendPath::from(path), buf),
-          Err(err) => Event::Error(format!("msgpack error {err:?}")),
+          Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
         }
       } else if number_value.is_f64() {
         match rmp::encode::write_f64(&mut buf, number_value.as_f64().unwrap()) {
           Ok(()) => Event::Value(SendPath::from(path), buf),
-          Err(err) => Event::Error(format!("msgpack error {err:?}")),
+          Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
         }
       } else {
         panic!("wut!?")
@@ -143,14 +143,14 @@ where
     JsonEvent::Boolean(v) => {
       match rmp::encode::write_bool(&mut buf, *v) {
         Ok(()) => Event::Value(SendPath::from(path), buf),
-        Err(err) => Event::Error(format!("msgpack error {err:?}")),
+        Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
       }
     }
 
     JsonEvent::Null => {
       match rmp::encode::write_nil(&mut buf) {
         Ok(()) => Event::Value(SendPath::from(path), buf),
-        Err(err) => Event::Error(format!("msgpack error {err:?}")),
+        Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
       }
     }
 
@@ -234,7 +234,7 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
         use sender::Event;
         let msgpacked_event = match event {
           Event::Value(path,jev) => encode_to_msgpack::<SendPath,String>(path, jev),
-          Event::Error(msg) => {println!("{msg}"); continue},
+          Event::Error(path, msg) => {println!("{msg} at path '{path}'"); continue},
           Event::Finished => break,
           err => todo!("{err:?}"),
         };

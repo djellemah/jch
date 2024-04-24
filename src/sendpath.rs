@@ -33,6 +33,14 @@ impl From<&JsonPath> for SendPath {
   }
 }
 
+impl From<JsonPath> for SendPath {
+  fn from(path_list : JsonPath) -> Self {
+    let steps = path_list.iter().map(std::clone::Clone::clone).collect::<Vec<Step>>();
+    // steps.reverse(); for list
+    Self(steps)
+  }
+}
+
 impl From<&SendPath> for SendPath {
   fn from(sendpath : &SendPath) -> Self {
     Self(sendpath.0.clone())

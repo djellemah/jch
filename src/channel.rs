@@ -29,7 +29,7 @@ pub fn channels(jev : &mut dyn JsonEvents<String>) {
       match event  {
         Event::Path(depth,path) => println!("{depth}:{}", path),
         Event::Value(p,v) => println!("{p} => {v}"),
-        Event::Error(err) => println!("Event::Error {err}"),
+        Event::Error(p,err) => println!("Event::Error {err} at path '{p}'"),
         Event::Finished => {println!("Event::Finished"); break},
       }
     }

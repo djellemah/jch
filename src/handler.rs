@@ -66,13 +66,13 @@ pub trait Handler {
             EndObject => panic!("should never receive EndObject {parents}"),
 
             Eof => break tx.send(Box::new(Event::Finished)),
-            err@ Error{..} => tx.send(Box::new(Event::Error(format!("{err}"))))
+            err@ Error{..} => tx.send(Box::new(Event::Error(loop_parents.into(), format!("{err}"))))
           };
           if let Err(_) = res { break res };
           index += 1;
         },
         // This means some kind of io error, ie not a json parse error. So bail out.
-        Err(err) => break tx.send(Box::new(Event::Error(format!("{err}")))),
+        Err(err) => break tx.send(Box::new(Event::Error(parents.into(), format!("{err}")))),
       }
     }
   }
@@ -102,12 +102,12 @@ pub trait Handler {
 
             // fin
             Eof => break tx.send(Box::new(Event::Finished)),
-            err@ Error{..} => tx.send(Box::new(Event::Error(format!("{err}")))),
+            err@ Error{..} => tx.send(Box::new(Event::Error((&parents).into(), format!("{err}")))),
           };
           if let Err(_) = res { break res };
         },
         // This means some kind of io error, ie not a json parse error. So bail out.
-        Err(err) => break tx.send(Box::new(Event::Error(format!("{err}")))),
+        Err(err) => break tx.send(Box::new(Event::Error(parents.into(),format!("{err}")))),
       };
     }
   }
@@ -137,11 +137,11 @@ pub trait Handler {
 
           // fin
           Eof => tx.send(Box::new(Event::Finished)),
-          err@ Error{..} => tx.send(Box::new(Event::Error(format!("{err}")))),
+          err@ Error{..} => tx.send(Box::new(Event::Error(parents.into(), format!("{err}")))),
         }
       },
       // This means some kind of io error, ie not a json parse error. So bail out.
-      Err(err) => tx.send(Box::new(Event::Error(format!("{err}")))),
+      Err(err) => tx.send(Box::new(Event::Error(parents.into(),format!("{err}")))),
     }
   }
 }

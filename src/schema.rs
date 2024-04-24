@@ -285,7 +285,7 @@ impl SchemaCollector {
       Event::Finished => (),
       // print these as they happen.
       // TODO maybe collect them all in the schema?
-      Event::Error(err) => println!("{err}"),
+      Event::Error(path, err) => println!("{err} at path '{path}'"),
     }
   }
 }

@@ -15,7 +15,7 @@ pub enum Event<V>{
   // path with the value at that path
   Value(SendPath,V),
   Finished,
-  Error(String),
+  Error(SendPath,String),
 }
 
 /// This can be implemented by anything from a function call to a channel.
