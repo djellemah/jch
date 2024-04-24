@@ -62,7 +62,6 @@ fn main() {
       // producer reads file and converts to serde_json events, consumer just receives them.
       channel::channels(&mut jevstream)
     }
-    ["-h"] => println!("-z file for sizes, -s file for schema"),
     [ "-r", "-c", dir, rst @ ..] => shredder::channel_shred(&std::path::PathBuf::from(dir), rst),
     [ "-r", dir, rst @ ..] => shredder::shred(&std::path::PathBuf::from(dir), rst),
     _ =>  {

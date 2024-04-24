@@ -219,67 +219,66 @@ impl SchemaCollector {
   // This is where we aggregate the types from the stream of incoming types
   fn process_event<'a>(&mut self, ev: &Event<SchemaType>) -> () {
     match ev {
-        Event::Path(_p, _v) => todo!(),
-        Event::Value(p, value_type) => {
-          let path = p.0.iter().map(|step| {
-            // replace all indexes in path with generic placeholder. Because we
-            // want the schema not the full tree.
-            match step {
-              crate::jsonpath::Step::Key(v) => Step::Key(v.clone()),
-              crate::jsonpath::Step::Index(_) => Step::Index,
-            }
-          }).collect::<Vec<Step>>();
-          let path = SchemaPath(path);
+      Event::Path(_p, _v) => todo!(),
+      Event::Value(p, value_type) => {
+        let path = p.0.iter().map(|step| {
+          // replace all indexes in path with generic placeholder. Because we
+          // want the schema not the full tree.
+          match step {
+            crate::jsonpath::Step::Key(v) => Step::Key(v.clone()),
+            crate::jsonpath::Step::Index(_) => Step::Index,
+          }
+        }).collect::<Vec<Step>>();
+        let path = SchemaPath(path);
 
-          // leaf_paths is path => Set<Leaf>
-          match self.leaf_paths.get_mut(&path) {
-            Some(leaf_kinds) => {
-              // find the current type in leaf_kinds
-              use SchemaType::*;
-              use NumberType::*;
-              let kind_option = leaf_kinds.iter().find(|Leaf{kind: stored_kind, ..}| {
-                match (value_type, stored_kind) {
-                  (String(_), String(_)) => true,
-                  (Number(Unsigned(_)), Number(Unsigned(_))) => true,
-                  (Number(Signed(_,_)), Number(Signed(_,_))) => true,
-                  (Number(Float(_,_)), Number(Float(_,_))) => true,
-                  (Boolean, Boolean) => true,
-                  (Null, Null) => true,
-                  _ => false,
-                }
-              });
-
-              // This is is now a particular SchemaType stored at leaf
-              // either create a new type, or update the existing type with current counts and values
-              match kind_option {
-                Some(kind) => {
-                  // increment count
-                  *kind.count.borrow_mut() += 1;
-
-                  // update the max/min and other aggregates here
-                  // transfer values from value_type (ie the current leaf value) to aggregate (ie in the schema we're building)
-                  let updated_aggregate_option = match (value_type,&*kind.aggregate.borrow()) {
-                    (&String(val_n), &String(agg_n)) => Some(String(std::cmp::max(val_n,agg_n))),
-                    (&Number(Unsigned(val_max)), &Number(Unsigned(agg_max))) => Some(Number(Unsigned(std::cmp::max(val_max,agg_max)))),
-                    (&Number(Signed(val_min,val_max)), &Number(Signed(agg_min,agg_max))) => Some(Number(Signed(std::cmp::min(val_min,agg_min), std::cmp::max(val_max,agg_max)))),
-                    (&Number(Float(val_min,val_max)), &Number(Float(agg_min,agg_max))) => Some(Number(Float(f64::min(val_min,agg_min), f64::max(val_max,agg_max)))),
-                    _ => None, // because no aggregates are collected for other types, so no need to update anything
-                  };
-
-                  if let Some(updated_aggregate) = updated_aggregate_option {
-                    kind.aggregate.replace(updated_aggregate);
-                  }
-                }
-                None => { leaf_kinds.insert(Leaf::new(value_type.clone())); }
+        // leaf_paths is path => Set<Leaf>
+        match self.leaf_paths.get_mut(&path) {
+          Some(leaf_kinds) => {
+            // find the current type in leaf_kinds
+            use SchemaType::*;
+            use NumberType::*;
+            let kind_option = leaf_kinds.iter().find(|Leaf{kind: stored_kind, ..}| {
+              match (value_type, stored_kind) {
+                (String(_), String(_)) => true,
+                (Number(Unsigned(_)), Number(Unsigned(_))) => true,
+                (Number(Signed(_,_)), Number(Signed(_,_))) => true,
+                (Number(Float(_,_)), Number(Float(_,_))) => true,
+                (Boolean, Boolean) => true,
+                (Null, Null) => true,
+                _ => false,
               }
+            });
 
-            },
-            None => {
-              // There are as yet no leafs for this path, so create a new leaf_kinds structure
-              let mut leaf_kinds = LeafKinds::new();
-              leaf_kinds.insert(Leaf::new(value_type.clone()));
-              self.leaf_paths.insert(path, leaf_kinds);
+            // This is is now a particular SchemaType stored at leaf
+            // either create a new type, or update the existing type with current counts and values
+            match kind_option {
+              Some(kind) => {
+                // increment count
+                *kind.count.borrow_mut() += 1;
+
+                // update the max/min and other aggregates here
+                // transfer values from value_type (ie the current leaf value) to aggregate (ie in the schema we're building)
+                let updated_aggregate_option = match (value_type,&*kind.aggregate.borrow()) {
+                  (&String(val_n), &String(agg_n)) => Some(String(std::cmp::max(val_n,agg_n))),
+                  (&Number(Unsigned(val_max)), &Number(Unsigned(agg_max))) => Some(Number(Unsigned(std::cmp::max(val_max,agg_max)))),
+                  (&Number(Signed(val_min,val_max)), &Number(Signed(agg_min,agg_max))) => Some(Number(Signed(std::cmp::min(val_min,agg_min), std::cmp::max(val_max,agg_max)))),
+                  (&Number(Float(val_min,val_max)), &Number(Float(agg_min,agg_max))) => Some(Number(Float(f64::min(val_min,agg_min), f64::max(val_max,agg_max)))),
+                  _ => None, // because no aggregates are collected for other types, so no need to update anything
+                };
+
+                if let Some(updated_aggregate) = updated_aggregate_option {
+                  kind.aggregate.replace(updated_aggregate);
+                }
+              }
+              None => { leaf_kinds.insert(Leaf::new(value_type.clone())); }
             }
+
+          },
+          None => {
+            // There are as yet no leafs for this path, so create a new leaf_kinds structure
+            let mut leaf_kinds = LeafKinds::new();
+            leaf_kinds.insert(Leaf::new(value_type.clone()));
+            self.leaf_paths.insert(path, leaf_kinds);
           }
         }
       }
