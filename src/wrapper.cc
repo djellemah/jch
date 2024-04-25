@@ -3,9 +3,9 @@
 // pull in the generated defintions from cxx.rs
 #include "jch/src/rapid.rs.h"
 
-#include "../../src/rapidjson/include/rapidjson/fwd.h"
-#include "../../src/rapidjson/include/rapidjson/rapidjson.h"
-#include "../../src/rapidjson/include/rapidjson/reader.h"
+#include "rapidjson/fwd.h"
+#include "rapidjson/rapidjson.h"
+#include "rapidjson/reader.h"
 
 namespace wut {
 /*

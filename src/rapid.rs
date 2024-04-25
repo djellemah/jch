@@ -82,7 +82,7 @@ impl RustHandler {
   fn EndArray(self : &RustHandler, element_count : usize) -> bool { println!("end ary {element_count}"); true }
 }
 
-#[cxx::bridge]
+#[cxx::bridge(namespace="wut")]
 mod ffi {
   // Shared structures
 
