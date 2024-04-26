@@ -61,8 +61,7 @@ private:
 	RustHandler& _rust_handler;
 };
 
-uint32_t parse(RustHandler & handler, RustStream & incoming) {
+void parse(RustHandler & handler, RustStream & incoming) {
 	WrapRustStream stream(incoming);
   rapidjson::Reader().Parse(stream, handler);
-  return 0;
 }

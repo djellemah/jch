@@ -8,7 +8,7 @@
 use std::ffi::c_char;
 
 struct RustStream {
-  reader : Box<dyn std::io::Read>,
+  reader : Box<dyn std::io::BufRead>,
   peeked : Option<c_char>,
   count : usize,
 }
@@ -81,6 +81,7 @@ impl RustHandler {
   fn StartArray(self : &RustHandler) -> bool { println!("start ary"); true }
   fn EndArray(self : &RustHandler, element_count : usize) -> bool { println!("end ary {element_count}"); true }
 }
+
 #[cxx::bridge]
 mod ffi {
   // Shared structures
@@ -123,10 +124,17 @@ mod ffi {
       // These functions must be implemented in c++
       // return value is just so the compiler doesn't complain about a void member
       // dunno what that's about.
-      fn parse(handler : &mut RustHandler, istream : &mut RustStream) -> u32;
+      fn parse(handler : &mut RustHandler, istream : &mut RustStream);
     }
 }
 
+#[allow(unused_variables,unused_mut)]
 fn main() {
-  unimplemented!();
+  let src : &[u8] = r#"{"one": "uno", "two": 2, "tre": false}"#.as_bytes();
+  let readable = Box::new(src);
+  // {
+    let mut reader = RustStream{reader: readable, peeked: None, count: 0};
+    let mut handler = RustHandler;
+    ffi::parse(&mut handler, &mut reader);
+  // }
 }

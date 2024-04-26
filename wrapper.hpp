@@ -1,3 +1,5 @@
+#pragma once
+
 #include "rapidjson/fwd.h"
 #include "rapidjson/rapidjson.h"
 #include "rapidjson/reader.h"
@@ -41,4 +43,4 @@ struct RustStream  {
 struct RustStream;
 struct RustHandler;
 
-uint32_t parse(RustHandler & handler, RustStream & incoming);
+void parse(RustHandler & handler, RustStream & incoming);
