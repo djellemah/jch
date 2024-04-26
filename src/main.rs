@@ -64,7 +64,10 @@ fn main() {
     }
     [ "-m", "-c", dir, rst @ ..] => shredder::channel_shred(&std::path::PathBuf::from(dir), rst),
     [ "-m", dir, rst @ ..] => shredder::shred(&std::path::PathBuf::from(dir), rst),
-    [ "-r", _rst @ ..] => jch::rapid::ping(),
+    [ "-r", rst @ ..] => {
+      let istream = jch::make_readable(rst);
+      jch::rapid::ping(istream)
+    }
     _ =>  {
       println!("-s [file] for schema\n-p [file] for plain\n-v [file] for valuer\n-c [file] for channel\n-m <dir> for shredder to MessagePack\n-m -c [dir] for fast shredder to MessagePack\n-r for RapidJson wrapper");
       exit(1)

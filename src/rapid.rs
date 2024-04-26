@@ -73,18 +73,18 @@ pub struct RustHandler;
 
 impl RustHandler {
   fn Null(self : &RustHandler) -> bool { println!("null"); true }
-  fn Bool(self : &RustHandler, val : bool) -> bool { println!("{val:?}"); true }
-  fn Int(self : &RustHandler, val : i32) -> bool { println!("{val:?}"); true }
-  fn Uint(self : &RustHandler, val : u64) -> bool { println!("{val:?}"); true }
-  fn Int64(self : &RustHandler, val : i64) -> bool { println!("{val:?}"); true }
-  fn Uint64(self : &RustHandler, val : i64) -> bool { println!("{val:?}"); true }
-  fn Double(self : &RustHandler, val : f64) -> bool { println!("{val:?}"); true }
-  fn RawNumber(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool { println!("{length}:{copy}:{val:?}"); true }
+  fn Bool(self : &RustHandler, val : bool) -> bool { println!("bool {val:?}"); true }
+  fn Int(self : &RustHandler, val : i32) -> bool { println!("int {val:?}"); true }
+  fn Uint(self : &RustHandler, val : u64) -> bool { println!("uint {val:?}"); true }
+  fn Int64(self : &RustHandler, val : i64) -> bool { println!("int64 {val:?}"); true }
+  fn Uint64(self : &RustHandler, val : i64) -> bool { println!("uint64 {val:?}"); true }
+  fn Double(self : &RustHandler, val : f64) -> bool { println!("double {val:?}"); true }
+  fn RawNumber(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool { println!("number {length}:{copy}:{val:?}"); true }
   fn String(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool {
     // TODO there must be a cxx.rss builtin for this
     let val = unsafe { std::slice::from_raw_parts(val as *const u8, length) };
     let val = unsafe { std::str::from_utf8_unchecked(val) };
-    println!("{length}:{copy}:{val:?}", );
+    println!("string {length}:{copy}:{val:?}", );
     true
   }
   fn StartObject(self : &RustHandler) -> bool { println!("start obj"); true }
@@ -92,7 +92,7 @@ impl RustHandler {
     // TODO there must be a cxx.rss builtin for this
     let val = unsafe { std::slice::from_raw_parts(val as *const u8, length) };
     let val = unsafe { std::str::from_utf8_unchecked(val) };
-    println!("{length}:{copy}:{val:?}", );
+    println!("key {length}:{copy}:{val:?}", );
     true
   }
   fn EndObject(self : &RustHandler, member_count : usize) -> bool { println!("end obj {member_count}"); true }
@@ -152,10 +152,10 @@ pub mod ffi {
     }
 }
 
-pub fn ping() {
-  let src : &[u8] = r#"{"one": "uno", "two": 2, "tre": false}"#.as_bytes();
-  let readable = Box::new(src);
-  let mut reader = RustStream::new(readable);
+pub fn ping( istream : Box<dyn std::io::BufRead> ) {
+  // let src : &[u8] = r#"{"one": "uno", "two": 2, "tre": false}"#.as_bytes();
+  // let istream = Box::new(src);
+  let mut reader = RustStream::new(istream);
   let mut handler = RustHandler;
   ffi::parse(&mut handler, &mut reader);
 }
