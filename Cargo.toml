@@ -4,6 +4,10 @@ version = "0.1.1"
 edition = "2021"
 default-run = "jch"
 
+[[bin]]
+name = "rapid"
+path = "src/rapid.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 # serde = "*"
@@ -26,5 +30,9 @@ json-event-parser = {version = "0.2.0"}
 crossbeam = "0.8"
 rustc-hash = "1.1.0"
 
+cxx = "1.0.121"
+
 [build-dependencies]
-bindgen = "0.69"
+bindgen = { version = "0.69", features = ["experimental"] }
+cxx-build = "1.0.121"
+

@@ -2,6 +2,7 @@
 #include "rapidjson/rapidjson.h"
 #include "rapidjson/reader.h"
 
+/*
 // apparently this implements the Handler concept
 struct RustHandler {
     bool Null();
@@ -20,7 +21,6 @@ struct RustHandler {
     bool EndArray(size_t elementCount);
 };
 
-// apparently this implements the Stream concept
 struct RustStream  {
     typedef char Ch;
 
@@ -36,8 +36,9 @@ struct RustStream  {
     const char* src_;     //!< Current read position.
     const char* head_;    //!< Original head of the string.
 };
+*/
 
-void parse(RustHandler & handler,  RustStream & istream) {
-    rapidjson::Reader reader;
-    reader.Parse(istream, handler);
-}
+struct RustStream;
+struct RustHandler;
+
+uint32_t parse(RustHandler & handler, RustStream & incoming);
