@@ -1,24 +1,25 @@
-// #![allow(non_upper_case_globals)]
-// #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-// include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-
-// https://cxx.rs/
 
 use std::ffi::c_char;
 
-struct RustStream {
+pub struct RustStream {
   reader : Box<dyn std::io::BufRead>,
   peeked : Option<c_char>,
   count : usize,
 }
 
-#[allow(unused_variables)]
 impl RustStream {
+  fn new(reader : Box<dyn std::io::BufRead>) -> Self {
+    Self{reader, peeked: None, count: 0}
+  }
+
   fn Peek(self : &mut RustStream) -> c_char {
     if let Some(peeked) = self.peeked {
+      // we already have a peek
       peeked
     } else {
+      // otherwise fetch it, stash it, and return it
+      // TODO inefficient
       let mut buf = [0u8];
       if let Ok(()) = self.reader.read_exact(&mut buf) {
         self.count += 1;
@@ -34,10 +35,13 @@ impl RustStream {
 
   fn Take(self : &mut RustStream) -> c_char {
     if let Some(peeked) = self.peeked {
+      // consume peeked first
       let rv = peeked as c_char;
       self.peeked = None;
       rv
     } else {
+      // otherwise fetch direct from Read
+      // TODO inefficient
       let mut buf = [0u8];
       if let Ok(()) = self.reader.read_exact(&mut buf) {
         self.count += 1;
@@ -54,16 +58,18 @@ impl RustStream {
     self.count
   }
 
-  unsafe fn PutBegin(self : &mut RustStream) -> c_char {
-    todo!("implement PutBegin")
-  }
-
-  fn Put(self : &mut RustStream, one : c_char) { todo!("Put") }
-  fn Flush(self : &mut RustStream) { todo!("Flush") }
-  unsafe fn PutEnd(self : &mut RustStream, stuff : *mut c_char) -> usize { todo!("PutEnd") }
+  // Apparently these are not necessary for read-only rapidjson::Stream
+  #[allow(unused_variables)]
+  unsafe fn PutBegin(self : &mut RustStream) -> c_char { unimplemented!("PutBegin not necessary for read-only stream") }
+  #[allow(unused_variables)]
+  fn Put(self : &mut RustStream, one : c_char) { unimplemented!("Put not necessary for read-only stream") }
+  #[allow(unused_variables)]
+  fn Flush(self : &mut RustStream) { unimplemented!("Flush not necessary for read-only stream") }
+  #[allow(unused_variables)]
+  unsafe fn PutEnd(self : &mut RustStream, stuff : *mut c_char) -> usize { unimplemented!("PutEnd not necessary for read-only stream") }
 }
 
-struct RustHandler;
+pub struct RustHandler;
 
 impl RustHandler {
   fn Null(self : &RustHandler) -> bool { println!("null"); true }
@@ -74,23 +80,42 @@ impl RustHandler {
   fn Uint64(self : &RustHandler, val : i64) -> bool { println!("{val:?}"); true }
   fn Double(self : &RustHandler, val : f64) -> bool { println!("{val:?}"); true }
   fn RawNumber(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool { println!("{length}:{copy}:{val:?}"); true }
-  fn String(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool { println!("{length}:{copy}:{val:?}"); true }
+  fn String(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool {
+    // TODO there must be a cxx.rss builtin for this
+    let val = unsafe { std::slice::from_raw_parts(val as *const u8, length) };
+    let val = unsafe { std::str::from_utf8_unchecked(val) };
+    println!("{length}:{copy}:{val:?}", );
+    true
+  }
   fn StartObject(self : &RustHandler) -> bool { println!("start obj"); true }
-  fn Key(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool { println!("{length}:{copy}:{val:?}"); true }
+  fn Key(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool {
+    // TODO there must be a cxx.rss builtin for this
+    let val = unsafe { std::slice::from_raw_parts(val as *const u8, length) };
+    let val = unsafe { std::str::from_utf8_unchecked(val) };
+    println!("{length}:{copy}:{val:?}", );
+    true
+  }
   fn EndObject(self : &RustHandler, member_count : usize) -> bool { println!("end obj {member_count}"); true }
   fn StartArray(self : &RustHandler) -> bool { println!("start ary"); true }
   fn EndArray(self : &RustHandler, element_count : usize) -> bool { println!("end ary {element_count}"); true }
 }
 
-#[cxx::bridge(namespace="wut")]
-mod ffi {
-  // Shared structures
+// can also have
+// #[cxx::bridge(namespace = "your_namespace_here")]
+// along with relevant namespaces in c++ wrapper
+#[cxx::bridge]
+pub mod ffi {
+    // Shared structures
+
+    // (None)
 
     // These must be implemented in Rust
     extern "Rust" {
+      // implement the api required by rapidjson
       type RustStream;
       type RustHandler;
 
+      // RustStream methods
       fn Peek(self : &mut RustStream) -> c_char;
       fn Take(self : &mut RustStream) -> c_char;
       // position in stream
@@ -100,6 +125,7 @@ mod ffi {
       fn Flush(self : &mut RustStream);
       unsafe fn PutEnd(self : &mut RustStream, stuff : *mut c_char) -> usize;
 
+      // RustHandler methods
       // These are callbacks from c++
       fn Null(self : &RustHandler) -> bool;
       fn Bool(self : &RustHandler, b : bool) -> bool;
@@ -117,24 +143,19 @@ mod ffi {
       fn EndArray(self : &RustHandler, element_count : usize) -> bool;
     }
 
-    #[allow(dead_code)]
     unsafe extern "C++" {
+      // NOTE jch is just what cxx-build wants to call it, because of the cargo package name.
       include!("jch/src/wrapper.h");
 
       // These functions must be implemented in c++
-      // return value is just so the compiler doesn't complain about a void member
-      // dunno what that's about.
-      fn parse(handler : &mut RustHandler, istream : &mut RustStream);
+      pub fn parse(handler : &mut RustHandler, istream : &mut RustStream);
     }
 }
 
-#[allow(unused_variables,unused_mut)]
-fn main() {
+pub fn ping() {
   let src : &[u8] = r#"{"one": "uno", "two": 2, "tre": false}"#.as_bytes();
   let readable = Box::new(src);
-  // {
-    let mut reader = RustStream{reader: readable, peeked: None, count: 0};
-    let mut handler = RustHandler;
-    ffi::parse(&mut handler, &mut reader);
-  // }
+  let mut reader = RustStream::new(readable);
+  let mut handler = RustHandler;
+  ffi::parse(&mut handler, &mut reader);
 }

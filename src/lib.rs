@@ -32,6 +32,7 @@ pub mod valuer;
 pub mod channel;
 pub mod fn_snd;
 
+// rapidjson wrapper
 pub mod rapid;
 
 /// The idea here was something like ruby's ARGF, ie stdin and then all command line args that are files.

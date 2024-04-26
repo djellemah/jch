@@ -62,10 +62,11 @@ fn main() {
       // producer reads file and converts to serde_json events, consumer just receives them.
       channel::channels(&mut jevstream)
     }
-    [ "-r", "-c", dir, rst @ ..] => shredder::channel_shred(&std::path::PathBuf::from(dir), rst),
-    [ "-r", dir, rst @ ..] => shredder::shred(&std::path::PathBuf::from(dir), rst),
+    [ "-m", "-c", dir, rst @ ..] => shredder::channel_shred(&std::path::PathBuf::from(dir), rst),
+    [ "-m", dir, rst @ ..] => shredder::shred(&std::path::PathBuf::from(dir), rst),
+    [ "-r", _rst @ ..] => jch::rapid::ping(),
     _ =>  {
-      println!("-s [file] for schema\n-p [file] for plain\n-v [file] for valuer\n-c [file] for channel\n-r <dir> for shredder\n-r -c [dir] for fast shredder");
+      println!("-s [file] for schema\n-p [file] for plain\n-v [file] for valuer\n-c [file] for channel\n-m <dir> for shredder to MessagePack\n-m -c [dir] for fast shredder to MessagePack\n-r for RapidJson wrapper");
       exit(1)
     }
   }

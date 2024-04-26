@@ -1,13 +1,15 @@
+// NOTE jch is just what cxx-build wants to call it, because of the cargo package name.
 #include "jch/src/wrapper.h"
 
 // pull in the generated defintions from cxx.rs
+// NOTE jch is just what cxx-build wants to call it, because of the cargo package name.
 #include "jch/src/rapid.rs.h"
 
+// TODO vendor or git submodule this into the build tree
 #include "rapidjson/fwd.h"
 #include "rapidjson/rapidjson.h"
 #include "rapidjson/reader.h"
 
-namespace wut {
 /*
   From rapidjson docs:
 
@@ -15,6 +17,11 @@ namespace wut {
     \brief Concept for reading and writing characters.
 
     For read-only stream, no need to implement PutBegin(), Put(), Flush() and PutEnd().
+*/
+/*
+	This implements the Stream concept.
+
+	We need it here, otherwise there's nowhere to hang the Ch typedef.
 */
 class WrapRustStream {
 public:
@@ -30,6 +37,7 @@ public:
 
     // Begin writing operation at the current read pointer.
     //! \return The begin writer pointer.
+    // rapidjson::Reader interprets 0 as eof.
     Ch* PutBegin() { return reinterpret_cast<Ch*>(0); }
     void Put(Ch ch) { return _rust_stream.Put(ch); }
     void Flush() {  return _rust_stream.Flush(); }
@@ -43,6 +51,7 @@ private:
 };
 
 // And this implements the Handler concept
+// We need it here, otherwise there's nowhere to hang the Ch typedef.
 class WrapRustHandler {
 public:
 	typedef char Ch;
@@ -67,12 +76,8 @@ private:
 	RustHandler& _rust_handler;
 };
 
-const char * hello() {
-	return "This is a constant sorrow";
-}
-
+// Implement this in c++ so it can instantiate the rapidjson templates.
 void parse(RustHandler & handler, RustStream & incoming) {
 	WrapRustStream stream(incoming);
   rapidjson::Reader().Parse(stream, handler);
-}
 }
