@@ -13,6 +13,7 @@ impl RustStream {
     Self{reader, peeked: None, count: 0}
   }
 
+  #[inline]
   fn Peek(self : &mut RustStream) -> c_char {
     if let Some(peeked) = self.peeked {
       // we already have a peek
@@ -33,6 +34,7 @@ impl RustStream {
     }
   }
 
+  #[inline]
   fn Take(self : &mut RustStream) -> c_char {
     if let Some(peeked) = self.peeked {
       // consume peeked first
@@ -54,6 +56,7 @@ impl RustStream {
   }
 
   // position in stream
+  #[inline]
   fn Tell(self : &RustStream) -> usize {
     self.count
   }
@@ -72,19 +75,20 @@ impl RustStream {
 pub struct RustHandler;
 
 impl RustHandler {
+  // return value for all of these is true -> continue parsing; false -> halt parsing
   fn Null(self : &RustHandler) -> bool { println!("null"); true }
-  fn Bool(self : &RustHandler, val : bool) -> bool { println!("bool {val:?}"); true }
-  fn Int(self : &RustHandler, val : i32) -> bool { println!("int {val:?}"); true }
-  fn Uint(self : &RustHandler, val : u64) -> bool { println!("uint {val:?}"); true }
-  fn Int64(self : &RustHandler, val : i64) -> bool { println!("int64 {val:?}"); true }
-  fn Uint64(self : &RustHandler, val : i64) -> bool { println!("uint64 {val:?}"); true }
-  fn Double(self : &RustHandler, val : f64) -> bool { println!("double {val:?}"); true }
+  fn Bool(self : &RustHandler, val : bool) -> bool { println!("bool {val}"); true }
+  fn Int(self : &RustHandler, val : i32) -> bool { println!("int {val}"); true }
+  fn Uint(self : &RustHandler, val : u64) -> bool { println!("uint {val}"); true }
+  fn Int64(self : &RustHandler, val : i64) -> bool { println!("int64 {val}"); true }
+  fn Uint64(self : &RustHandler, val : i64) -> bool { println!("uint64 {val}"); true }
+  fn Double(self : &RustHandler, val : f64) -> bool { println!("double {val}"); true }
   fn RawNumber(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool { println!("number {length}:{copy}:{val:?}"); true }
   fn String(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool {
     // TODO there must be a cxx.rss builtin for this
     let val = unsafe { std::slice::from_raw_parts(val as *const u8, length) };
     let val = unsafe { std::str::from_utf8_unchecked(val) };
-    println!("string {length}:{copy}:{val:?}", );
+    println!("string {length}:{copy}:{val}", );
     true
   }
   fn StartObject(self : &RustHandler) -> bool { println!("start obj"); true }
@@ -92,7 +96,7 @@ impl RustHandler {
     // TODO there must be a cxx.rss builtin for this
     let val = unsafe { std::slice::from_raw_parts(val as *const u8, length) };
     let val = unsafe { std::str::from_utf8_unchecked(val) };
-    println!("key {length}:{copy}:{val:?}", );
+    println!("key {length}:{copy}:{val}", );
     true
   }
   fn EndObject(self : &RustHandler, member_count : usize) -> bool { println!("end obj {member_count}"); true }

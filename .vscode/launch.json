@@ -7,34 +7,34 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'cln'",
+            "name": "Debug executable 'jch'",
             "cargo": {
                 "args": [
-                    "run",
-                    "--bin=cln",
-                    "--package=cln"
+                    "build",
+                    "--bin=jch",
+                    "--package=jch",
                 ],
                 "filter": {
-                    "name": "cln",
+                    "name": "jch",
                     "kind": "bin"
-                }
+                },
             },
-            "args": ["../things.json"],
+            "args": ["-r", "../data/large-file.json"],
             "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'cln'",
+            "name": "Debug unit tests in executable 'jch'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=cln",
-                    "--package=cln"
+                    "--bin=jch",
+                    "--package=jch"
                 ],
                 "filter": {
-                    "name": "cln",
+                    "name": "jch",
                     "kind": "bin"
                 }
             },
