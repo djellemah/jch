@@ -1,8 +1,13 @@
-#include "jch/wrapper.hpp"
+#include "jch/src/wrapper.h"
 
 // pull in the generated defintions from cxx.rs
 #include "jch/src/rapid.rs.h"
 
+#include "../../src/rapidjson/include/rapidjson/fwd.h"
+#include "../../src/rapidjson/include/rapidjson/rapidjson.h"
+#include "../../src/rapidjson/include/rapidjson/reader.h"
+
+namespace wut {
 /*
   From rapidjson docs:
 
@@ -37,6 +42,7 @@ private:
     RustStream& _rust_stream;
 };
 
+// And this implements the Handler concept
 class WrapRustHandler {
 public:
 	typedef char Ch;
@@ -61,7 +67,12 @@ private:
 	RustHandler& _rust_handler;
 };
 
+const char * hello() {
+	return "This is a constant sorrow";
+}
+
 void parse(RustHandler & handler, RustStream & incoming) {
 	WrapRustStream stream(incoming);
   rapidjson::Reader().Parse(stream, handler);
+}
 }

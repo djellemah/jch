@@ -119,7 +119,7 @@ mod ffi {
 
     #[allow(dead_code)]
     unsafe extern "C++" {
-      include!("jch/wrapper.hpp");
+      include!("jch/src/wrapper.h");
 
       // These functions must be implemented in c++
       // return value is just so the compiler doesn't complain about a void member

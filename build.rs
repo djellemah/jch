@@ -16,12 +16,12 @@ fn main() {
 
     cxx_build::bridge("src/rapid.rs")
         .include(rapidjson_include)
-        .file("wrapper.cc")
+        .file("src/wrapper.cc")
         .cpp(true)
         .std("c++20")
         .compile("rapid");
 
     println!("cargo:rerun-if-changed=src/rapid.rs");
-    println!("cargo:rerun-if-changed=wrapper.cc");
-    println!("cargo:rerun-if-changed=wrapper.hpp");
+    println!("cargo:rerun-if-changed=src/wrapper.cc");
+    println!("cargo:rerun-if-changed=src/wrapper.h");
 }
