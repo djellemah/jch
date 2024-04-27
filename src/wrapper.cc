@@ -29,9 +29,9 @@ public:
 
     WrapRustStream(RustStream & rust_stream) : _rust_stream(rust_stream) {}
 
-    Ch Peek() const { return _rust_stream.Peek(); }
-    Ch Take() { return _rust_stream.Take(); }
-    size_t Tell() const { return _rust_stream.Tell(); } // 3
+    inline Ch Peek() const { return _rust_stream.Peek(); }
+    inline Ch Take() { return _rust_stream.Take(); }
+    inline size_t Tell() const { return _rust_stream.Tell(); }
 
     // these can stay unimplemented apparently
 
@@ -54,4 +54,16 @@ private:
 void parse(RustHandler & handler, RustStream & incoming) {
 	WrapRustStream stream(incoming);
   rapidjson::Reader().Parse(stream, handler);
+}
+
+#include "rapidjson/filereadstream.h"
+
+// So this is about 2x faster than the usage of a BufReader to the function that
+// takes a RustStream. Probably because my implementation is inefficient.
+void from_file(rust::String filename, RustHandler & handler) {
+	const size_t BUFSIZE = 65536;
+	char * buffer = new char[BUFSIZE];
+	FILE* fp = fopen(filename.c_str(), "rb"); // b is (should be) ignored on posix systems
+	auto stream = rapidjson::FileReadStream(fp, buffer, BUFSIZE);
+	rapidjson::Reader().Parse(stream, handler);
 }

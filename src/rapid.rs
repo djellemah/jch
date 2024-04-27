@@ -131,6 +131,7 @@ pub mod ffi {
 
       // RustHandler methods
       // These are callbacks from c++
+      // This implements the same api as the Handler concept in the rapidjson c++
       fn Null(self : &RustHandler) -> bool;
       fn Bool(self : &RustHandler, b : bool) -> bool;
       fn Int(self : &RustHandler, i : i32) -> bool;
@@ -153,13 +154,19 @@ pub mod ffi {
 
       // These functions must be implemented in c++
       pub fn parse(handler : &mut RustHandler, istream : &mut RustStream);
+      pub fn from_file(filename : String, handler : &mut RustHandler);
     }
 }
 
-pub fn ping( istream : Box<dyn std::io::BufRead> ) {
+pub fn parse( istream : Box<dyn std::io::BufRead> ) {
   // let src : &[u8] = r#"{"one": "uno", "two": 2, "tre": false}"#.as_bytes();
   // let istream = Box::new(src);
   let mut reader = RustStream::new(istream);
   let mut handler = RustHandler;
   ffi::parse(&mut handler, &mut reader);
+}
+
+pub fn parse_file( filename : &str ) {
+  let mut handler = RustHandler;
+  ffi::from_file(filename.to_string(), &mut handler );
 }
