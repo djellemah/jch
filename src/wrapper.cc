@@ -5,6 +5,9 @@
 // NOTE jch is just what cxx-build wants to call it, because of the cargo package name.
 #include "jch/src/rapid.rs.h"
 
+// turn on simd instructions
+#define RAPIDJSON_SSE42
+
 // TODO vendor or git-submodule this into the build tree
 #include "rapidjson/fwd.h"
 #include "rapidjson/rapidjson.h"
