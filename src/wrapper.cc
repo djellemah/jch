@@ -50,32 +50,6 @@ private:
     RustStream& _rust_stream;
 };
 
-// And this implements the Handler concept
-// We need it here, otherwise there's nowhere to hang the Ch typedef.
-class WrapRustHandler {
-public:
-	typedef char Ch;
-	WrapRustHandler(RustHandler & handler) : _rust_handler(handler) {}
-
-	bool Null() { return _rust_handler.Null(); }
-	bool Bool(bool b) { return _rust_handler.Bool(b); }
-	bool Int(int i) { return _rust_handler.Int(i); }
-	bool Uint(unsigned i) { return _rust_handler.Uint(i); }
-	bool Int64(int64_t i) { return _rust_handler.Int64(i); }
-	bool Uint64(uint64_t i) { return _rust_handler.Uint64(i); }
-	bool Double(double d) { return _rust_handler.Double(d); }
-	bool RawNumber(const char* str, size_t length, bool copy) { return _rust_handler.RawNumber(str, length, copy); }
-	bool String(const char* str, size_t length, bool copy) { return _rust_handler.String(str, length, copy); }
-	bool StartObject() { return _rust_handler.StartObject(); }
-	bool Key(const char* str, size_t length, bool copy) { return _rust_handler.Key(str, length, copy); }
-	bool EndObject(size_t memberCount) { return _rust_handler.EndObject(memberCount); }
-	bool StartArray() { return _rust_handler.StartArray(); }
-	bool EndArray(size_t elementCount) { return _rust_handler.EndArray(elementCount); }
-
-private:
-	RustHandler& _rust_handler;
-};
-
 // Implement this in c++ so it can instantiate the rapidjson templates.
 void parse(RustHandler & handler, RustStream & incoming) {
 	WrapRustStream stream(incoming);
