@@ -220,11 +220,11 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 
   use crate::plain::Plain;
   // The event that will be sent across the channel
-  type ChEvent<'a> = sender::Event<<Plain as Handler>::V<'a>>;
+  // type ChEvent<'a> = sender::Event<<Plain as Handler>::V<'a>>;
 
   // this seems to be about optimal wrt performance
   const CHANNEL_SIZE : usize = 8192;
-  let (tx, rx) = std::sync::mpsc::sync_channel::<ChEvent>(CHANNEL_SIZE);
+  let (tx, rx) = crossbeam::channel::bounded(CHANNEL_SIZE);
 
   // consumer thread
   let cons_thr = {

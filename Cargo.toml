@@ -23,3 +23,4 @@ rmp = "*"
 # This one didn't do what I want.
 # json_stream = {version = "*", git = "https://github.com/alexmaco/json_stream"}
 json-event-parser = {version = "0.2.0"}
+crossbeam = "0.8"

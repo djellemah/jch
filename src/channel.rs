@@ -5,10 +5,10 @@ use crate::jsonpath::JsonPath;
 use crate::sender::Sender;
 use crate::sender::Event;
 
-pub struct ChSender<T>(pub std::sync::mpsc::SyncSender<Event<T>>);
+pub struct ChSender<T>(pub crossbeam::channel::Sender<Event<T>>);
 
 impl<T : Clone + std::fmt::Debug> Sender<Event<T>> for ChSender<T> {
-  type SendError=std::sync::mpsc::SendError<Event<T>>;
+  type SendError=crossbeam::channel::SendError<Event<T>>;
 
   // Here's where we actually do something with the json event
   // That is, decouple the handling of the parse events, from the actual parsing stream.
@@ -21,7 +21,7 @@ impl<T : Clone + std::fmt::Debug> Sender<Event<T>> for ChSender<T> {
 pub fn channels(jev : &mut dyn JsonEvents<String>) {
   // this seems to be about optimal wrt performance
   const CHANNEL_SIZE : usize = 8192;
-  let (tx, rx) = std::sync::mpsc::sync_channel::<Event<serde_json::Value>>(CHANNEL_SIZE);
+  let (tx, rx) = crossbeam::channel::bounded(CHANNEL_SIZE);
 
   // consumer thread
   let cons_thr = std::thread::spawn(move || {
