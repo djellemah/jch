@@ -21,7 +21,8 @@ fn main() {
         .std("c++20")
         .compile("rapid");
 
-    println!("cargo:rerun-if-changed=src/rapid.rs");
-    println!("cargo:rerun-if-changed=src/wrapper.cc");
-    println!("cargo:rerun-if-changed=src/wrapper.h");
+    println!("cargo::rerun-if-changed=src/rapid.rs");
+    println!("cargo::rerun-if-changed=src/wrapper.cc");
+    println!("cargo::rerun-if-changed=src/wrapper.h");
+    println!("cargo::rerun-if-env-changed=RAPIDJSON_INCLUDE");
 }
