@@ -64,7 +64,7 @@ fn main() {
     }
     [ "-m", "-c", dir, rst @ ..] => shredder::channel_shred(&std::path::PathBuf::from(dir), rst),
     [ "-m", dir, rst @ ..] => shredder::shred(&std::path::PathBuf::from(dir), rst),
-    [ "-r", "-f", filename, _rst @ ..] => jch::rapid::parse_file(filename),
+    [ "-r", "-f", filename, _rst @ ..] => jch::rapid::schema_from_file(filename),
     [ "-r", rst @ ..] => {
       let istream = jch::make_readable(rst);
       jch::rapid::parse(istream)
