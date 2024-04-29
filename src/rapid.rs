@@ -73,12 +73,10 @@ impl RustStream {
   unsafe fn PutEnd(self : &mut RustStream, stuff : *mut c_char) -> usize { unimplemented!("PutEnd not necessary for read-only stream") }
 }
 
-use std::cell::RefCell;
-
 // convert rapidjson values to JsonEvents and send to a channel.
 pub struct RustHandler
 {
-  tx : RefCell<rtrb::Producer<JsonEvent<String>>>,
+  tx : rtrb::Producer<JsonEvent<String>>,
 }
 
 use crate::parser::JsonEvent;
@@ -86,7 +84,7 @@ use crate::parser::JsonEvent;
 impl RustHandler {
   pub fn new(tx : rtrb::Producer<JsonEvent<String>>) -> Self
   {
-    Self{tx: RefCell::new(tx)}
+    Self{tx}
   }
 
   pub fn close(self) {
@@ -95,59 +93,60 @@ impl RustHandler {
 
   // shim to ease the forwarding
   #[inline]
-  fn send(&self, jev : JsonEvent<String>) -> bool {
-    let mut tx = self.tx.borrow_mut();
-    while !tx.is_abandoned() {
-      let jev = jev.clone();
-      match tx.push(jev) {
-        Ok(()) => return true,
-        Err(rtrb::PushError::Full(_)) => {
-          // ringbuffer is full, so wait for signal from consumer
-          std::thread::park()
+  fn send(&mut self, jev : JsonEvent<String>) -> bool {
+    match self.tx.push(jev) {
+      Ok(()) => true,
+      Err(rtrb::PushError::Full(rejected)) => {
+        // return false tells rapidjson to stop parsing
+        if self.tx.is_abandoned() { false }
+        else {
+          // otherwise ringbuffer is full, so wait for signal from consumer
+          std::thread::park();
+          // recurse instead of loop - to avoid borrow and Rc in Self
+          self.send(rejected)
         }
       }
     }
-    return false
   }
 
   // return value for all of these is true -> continue parsing; false -> halt parsing
   //
   // the _copy parameter appears to be always 'true', which I take to mean "it's not safe to keep a reference to this parameter"
-  fn Null(self : &RustHandler) -> bool { self.send(JsonEvent::Null) }
-  fn Bool(self : &RustHandler, val : bool) -> bool { self.send(JsonEvent::Boolean(val)) }
+  fn Null(self : &mut RustHandler) -> bool { self.send(JsonEvent::Null) }
+  fn Bool(self : &mut RustHandler, val : bool) -> bool { self.send(JsonEvent::Boolean(val)) }
 
   // All the number types.
   //
   // TODO rapidjson has already parsed these strings into numbers, so it's
   // wasteful to convert them back to strings.
-  fn Int(self : &RustHandler, val : i32) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
-  fn Uint(self : &RustHandler, val : u64) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
-  fn Int64(self : &RustHandler, val : i64) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
-  fn Uint64(self : &RustHandler, val : i64) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
-  fn Double(self : &RustHandler, val : f64) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
-  fn RawNumber(self : &RustHandler, val : *const c_char, length : usize, _copy : bool) -> bool {
+  fn Int(self : &mut RustHandler, val : i32) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
+  fn Uint(self : &mut RustHandler, val : u64) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
+  fn Int64(self : &mut RustHandler, val : i64) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
+  fn Uint64(self : &mut RustHandler, val : i64) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
+  fn Double(self : &mut RustHandler, val : f64) -> bool { self.send(JsonEvent::Number(format!("{val}"))) }
+  fn RawNumber(self : &mut RustHandler, val : *const c_char, length : usize, _copy : bool) -> bool {
     let val = unsafe { std::slice::from_raw_parts(val as *const u8, length) };
     let val = unsafe { std::str::from_utf8_unchecked(val) };
     self.send(JsonEvent::Number(val.into()))
   }
 
-  fn String(self : &RustHandler, val : *const c_char, length : usize, _copy : bool) -> bool {
+  fn String(self : &mut RustHandler, val : *const c_char, length : usize, _copy : bool) -> bool {
     // TODO there must be a cxx.rss builtin for this
     let val = unsafe { std::slice::from_raw_parts(val as *const u8, length) };
     let val = unsafe { std::str::from_utf8_unchecked(val) };
     self.send(JsonEvent::String(val.into()))
   }
 
-  fn StartObject(self : &RustHandler) -> bool { self.send(JsonEvent::StartObject) }
-  fn Key(self : &RustHandler, val : *const c_char, length : usize, _copy : bool) -> bool {
+  fn StartObject(self : &mut RustHandler) -> bool { self.send(JsonEvent::StartObject) }
+  fn Key(self : &mut RustHandler, val : *const c_char, length : usize, _copy : bool) -> bool {
     // TODO there must be a cxx.rss builtin for this
     let val = unsafe { std::slice::from_raw_parts(val as *const u8, length) };
     let val = unsafe { std::str::from_utf8_unchecked(val) };
     self.send(JsonEvent::ObjectKey(val.into()))
   }
-  fn EndObject(self : &RustHandler, _member_count : usize) -> bool { self.send(JsonEvent::EndObject) }
-  fn StartArray(self : &RustHandler) -> bool { self.send(JsonEvent::StartArray) }
-  fn EndArray(self : &RustHandler, _element_count : usize) -> bool { self.send(JsonEvent::EndArray) }
+  fn EndObject(self : &mut RustHandler, _member_count : usize) -> bool { self.send(JsonEvent::EndObject) }
+  fn StartArray(self : &mut RustHandler) -> bool { self.send(JsonEvent::StartArray) }
+  fn EndArray(self : &mut RustHandler, _element_count : usize) -> bool { self.send(JsonEvent::EndArray) }
 }
 
 // can also have
@@ -178,20 +177,20 @@ pub mod ffi {
       // RustHandler methods
       // These are callbacks from c++
       // This implements the same api as the Handler concept in the rapidjson c++
-      fn Null(self : &RustHandler) -> bool;
-      fn Bool(self : &RustHandler, b : bool) -> bool;
-      fn Int(self : &RustHandler, i : i32) -> bool;
-      fn Uint(self : &RustHandler, i : u64) -> bool;
-      fn Int64(self : &RustHandler, i : i64) -> bool;
-      fn Uint64(self : &RustHandler, i : i64) -> bool;
-      fn Double(self : &RustHandler, d : f64) -> bool;
-      unsafe fn RawNumber(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool;
-      unsafe fn String(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool;
-      fn StartObject(self : &RustHandler) -> bool;
-      unsafe fn Key(self : &RustHandler, val : *const c_char, length : usize, copy : bool) -> bool;
-      fn EndObject(self : &RustHandler, member_count : usize) -> bool;
-      fn StartArray(self : &RustHandler) -> bool;
-      fn EndArray(self : &RustHandler, element_count : usize) -> bool;
+      fn Null(self : &mut RustHandler) -> bool;
+      fn Bool(self : &mut RustHandler, b : bool) -> bool;
+      fn Int(self : &mut RustHandler, i : i32) -> bool;
+      fn Uint(self : &mut RustHandler, i : u64) -> bool;
+      fn Int64(self : &mut RustHandler, i : i64) -> bool;
+      fn Uint64(self : &mut RustHandler, i : i64) -> bool;
+      fn Double(self : &mut RustHandler, d : f64) -> bool;
+      unsafe fn RawNumber(self : &mut RustHandler, val : *const c_char, length : usize, copy : bool) -> bool;
+      unsafe fn String(self : &mut RustHandler, val : *const c_char, length : usize, copy : bool) -> bool;
+      fn StartObject(self : &mut RustHandler) -> bool;
+      unsafe fn Key(self : &mut RustHandler, val : *const c_char, length : usize, copy : bool) -> bool;
+      fn EndObject(self : &mut RustHandler, member_count : usize) -> bool;
+      fn StartArray(self : &mut RustHandler) -> bool;
+      fn EndArray(self : &mut RustHandler, element_count : usize) -> bool;
     }
 
     unsafe extern "C++" {
@@ -205,7 +204,7 @@ pub mod ffi {
 }
 
 // This seems to be around optimal
-const RING_BUFFER_BOUND : usize = (2usize).pow(12);
+const RING_BUFFER_BOUND : usize = (2usize).pow(21);
 
 /// parse events via our implementation of a rapidjson::Stream.
 /// It's quite slow compared to letting rapidjson handle the file reading.
