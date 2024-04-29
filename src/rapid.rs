@@ -169,6 +169,8 @@ pub mod ffi {
       fn Take(self : &mut RustStream) -> c_char;
       // position in stream
       fn Tell(self : &RustStream) -> usize;
+
+      // These can remain unimplemented for read-only streams
       unsafe fn PutBegin(self : &mut RustStream) -> c_char;
       fn Put(self : &mut RustStream, one : c_char);
       fn Flush(self : &mut RustStream);
@@ -231,7 +233,7 @@ struct ChannelStreamer(rtrb::Consumer<JsonEvent<String>>, std::thread::Thread);
 
 use crate::parser::JsonEvents;
 
-impl<'l> JsonEvents<'_,String> for ChannelStreamer {
+impl JsonEvents<'_,String> for ChannelStreamer {
   #[inline]
   fn next_event<'a>(&'a mut self) -> std::result::Result<JsonEvent<std::string::String>, Box<(dyn std::error::Error + 'static)>> {
     while !self.0.is_abandoned() {
