@@ -408,7 +408,7 @@ impl Sender<Event<SchemaType>> for SchemaCollector {
   }
 }
 
-pub fn schema(jev : &mut dyn JsonEvents<String>) {
+pub fn schema(wr :&mut dyn std::io::Write, jev : &mut dyn JsonEvents<String>) {
   // collect and display schema of input
   let mut collector = SchemaCollector::new();
 
@@ -416,7 +416,7 @@ pub fn schema(jev : &mut dyn JsonEvents<String>) {
   let visitor = EventConverter::new();
 
   match visitor.value(jev, JsonPath::new(), 0, &mut collector ) {
-    Ok(()) => println!("{collector}"),
+    Ok(()) => writeln!(wr,"{collector}").expect("error writing schema"),
     Err(err) => { eprintln!("ending event reading because {err:?}") },
   }
 }

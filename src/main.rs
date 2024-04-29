@@ -21,7 +21,7 @@ fn main() {
     ["-s", rst @ ..] => {
       let istream = jch::make_readable(rst);
       let mut jevstream = parser::JsonEventParser::new(istream);
-      schema::schema(&mut jevstream);
+      schema::schema(&mut std::io::stdout(), &mut jevstream);
     }
     // This is PoC to see that the rest of the handlers and visitors work.
     ["-p", rst @ ..] => {
