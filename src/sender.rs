@@ -24,5 +24,5 @@ where
   Ev : std::fmt::Debug
 {
   type SendError : std::fmt::Debug + std::fmt::Display;
-  fn send<'a>(&mut self, ev: Box<Ev>) -> Result<(), Self::SendError>;
+  fn send(&mut self, ev: Box<Ev>) -> Result<(), Self::SendError>;
 }

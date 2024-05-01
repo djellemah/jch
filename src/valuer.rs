@@ -54,7 +54,7 @@ impl Handler for Valuer
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
     use JsonEvent::*;
-    if !self.match_path(&path) {
+    if !self.match_path(path) {
       return package!(tx,0,path)
     }
     match jev {
