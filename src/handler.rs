@@ -55,7 +55,7 @@ pub trait Handler {
           use JsonEvent::*;
           let res = match ev {
             // ok we have a leaf, so match path then send value
-            String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
+            String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, ev, tx),
 
             StartArray => self.array(jevs, loop_parents, depth+1, tx),
             EndArray => return Ok(()), // do not send path, this is +1 past the end of the array
@@ -68,7 +68,7 @@ pub trait Handler {
             Eof => break tx.send(Box::new(Event::Finished)),
             err@ Error{..} => tx.send(Box::new(Event::Error(loop_parents.into(), format!("{err}"))))
           };
-          if let Err(_) = res { break res };
+          if res.is_err() { break res };
           index += 1;
         },
         // This means some kind of io error, ie not a json parse error. So bail out.
@@ -104,7 +104,7 @@ pub trait Handler {
             Eof => break tx.send(Box::new(Event::Finished)),
             err@ Error{..} => tx.send(Box::new(Event::Error((&parents).into(), format!("{err}")))),
           };
-          if let Err(_) = res { break res };
+          if res.is_err() { break res };
         },
         // This means some kind of io error, ie not a json parse error. So bail out.
         Err(err) => break tx.send(Box::new(Event::Error(parents.into(),format!("{err}")))),
@@ -126,7 +126,7 @@ pub trait Handler {
         use JsonEvent::*;
         match ev {
           // ok we have a leaf, so emit the value and path
-          String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, &ev, tx),
+          String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, ev, tx),
 
           StartArray => self.array(jevs, parents, depth+1, tx),
           EndArray => panic!("should never receive EndArray {parents}"),

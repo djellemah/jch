@@ -40,10 +40,10 @@ fn create() {
   let _je = JsonEvent::ObjectKey("cle".to_string());
 }
 
-impl<'a, T> From<&json_event_parser::JsonEvent<'_>> for JsonEvent<T>
+impl<T> From<&json_event_parser::JsonEvent<'_>> for JsonEvent<T>
 where T : AsRef<[u8]> + From<String> // because we want storage + conversion from Cow<'_,str>
 {
-  fn from<'b>(jev: &'b json_event_parser::JsonEvent<'_>) -> Self {
+  fn from(jev: &json_event_parser::JsonEvent<'_>) -> Self {
     use json_event_parser as jep;
     match jev {
       jep::JsonEvent::String(v)    => JsonEvent::String(T::from(v.to_string())),
@@ -60,7 +60,7 @@ where T : AsRef<[u8]> + From<String> // because we want storage + conversion fro
   }
 }
 
-impl<'a, T> From<json_event_parser::JsonEvent<'_>> for JsonEvent<T>
+impl<T> From<json_event_parser::JsonEvent<'_>> for JsonEvent<T>
 where T : AsRef<[u8]> + From<String> //+ ToOwned<Owned=T> + for<'b> std::convert::From<&'b std::borrow::Cow<'b, str>>
 {
   fn from(jev: json_event_parser::JsonEvent<'_>) -> Self {
@@ -91,7 +91,7 @@ fn from_vec() {
 pub trait JsonEvents<'l, Stringish>
 where Stringish : 'l + AsRef<[u8]> + From<String> // because we want storage + conversion from Cow<'_,str>
 {
-   fn next_event<'a>(&'a mut self) -> Result<JsonEvent<Stringish>, Box<dyn std::error::Error>>;
+   fn next_event(&mut self) -> Result<JsonEvent<Stringish>, Box<dyn std::error::Error>>;
 }
 
 /// Source of json events from json_event_parser

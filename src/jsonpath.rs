@@ -77,7 +77,7 @@ impl From<&str> for Step {
 }
 
 impl From<String> for Step {
-  fn from(s: String) -> Self { Self::Key(s.into()) }
+  fn from(s: String) -> Self { Self::Key(s) }
 }
 
 impl From<&String> for Step {
@@ -89,6 +89,7 @@ impl From<std::borrow::Cow<'_, str>> for Step {
 }
 
 impl From<&std::borrow::Cow<'_, str>> for Step {
+  #[allow(clippy::suspicious_to_owned)] // compiler fails unless to_owned is called
   fn from(value: &std::borrow::Cow<'_, str>) -> Self { Self::Key(value.to_owned().into()) }
 }
 

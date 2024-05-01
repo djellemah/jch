@@ -48,14 +48,15 @@ impl<V> ShredWriter<V>
   ///
   /// so it doesn't repeatedly reopen the same files.
   fn find_or_create<'a>(&'a mut self, send_path : &crate::sendpath::SendPath) -> &'a std::fs::File {
-    let pathname = self.dir.join(&filename_of_path(send_path, &self.ext));
+    let pathname = self.dir.join(filename_of_path(send_path, &self.ext));
     if self.files.contains_key(&pathname) {
       self.files.get(&pathname).unwrap()
     } else {
       // expect here because by now the filename should have valid characters, and other errors are fatal anyway.
+      #[allow(clippy::expect_fun_call)]
       let file = std::fs::File::create(&pathname).expect(format!("error for path {pathname:?}").as_str());
       // by definition this is a None
-      if let Some(_) = self.files.insert(pathname.clone(), file) {
+      if self.files.insert(pathname.clone(), file).is_some() {
         panic!("oops with {pathname:?}")
       }
       // This only happens the first time the file is created,
@@ -89,17 +90,18 @@ impl<V : AsRef<[u8]> + std::fmt::Debug> sender::Sender<sender::Event<V>> for Shr
   type SendError = String;
 
   fn send(&mut self, ev: Box<sender::Event<V>>) -> Result<(), Self::SendError> {
-    Ok(self.write_msgpack_value(&ev))
+    self.write_msgpack_value(&ev);
+    Ok(())
   }
 }
 
 /// convert the given json event to a sender event containing messagepack in its buffer
 fn encode_to_msgpack
-<'a, 'b, Path: 'a, Stringish : 'b>
+<'a, 'b, Path: 'a, Stringish>
 (path : &'a Path, ev : &'b JsonEvent<Stringish>)
 -> sender::Event<Vec<u8>>
 where
-  Stringish : AsRef<[u8]> + AsRef<str> + std::fmt::Display,
+  Stringish : 'b + AsRef<[u8]> + AsRef<str> + std::fmt::Display,
   crate::sendpath::SendPath : for<'sp> From<&'sp Path>
 {
   // store msgpack bytes in here
@@ -160,6 +162,12 @@ where
 
 pub struct MsgPacker();
 
+impl Default for MsgPacker {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl MsgPacker {
   pub fn new() -> Self {
     Self()
@@ -183,8 +191,8 @@ impl Handler for MsgPacker {
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
   where Snd : for <'x> sender::Sender<sender::Event<Self::V<'x>>>
   {
-    if !self.match_path(&path) { return Ok(()) }
-    let send_event = encode_to_msgpack::<JsonPath,String>(path, &ev);
+    if !self.match_path(path) { return Ok(()) }
+    let send_event = encode_to_msgpack::<JsonPath,String>(path, ev);
     // OPT must this really be in a box?
     tx
       .send(Box::new(send_event))
@@ -200,7 +208,7 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
   let mut jevstream = parser::JsonEventParser::new(istream);
 
   // write events as Dremel-style record shred columns
-  let mut writer = crate::shredder::ShredWriter::new(&dir, "mpk");
+  let mut writer = crate::shredder::ShredWriter::new(dir, "mpk");
 
   // serialisation format for columns
   let visitor = MsgPacker::new();
@@ -211,12 +219,11 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 }
 
 // T = serde_json::Value, for example
-pub fn channel_shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
+pub fn channel_shred<S>(dir : &std::path::Path, maybe_readable_args : &[S])
 where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 {
   // Create ShredWriter first, because it might want to stop things.
-  let dir = dir.clone();
-  let mut writer : ShredWriter<Vec<u8>> = ShredWriter::new(&dir, "mpk");
+  let mut writer : ShredWriter<Vec<u8>> = ShredWriter::new(dir, "mpk");
 
   use crate::plain::Plain;
   // The event that will be sent across the channel
@@ -273,7 +280,7 @@ It's on the critical path for every single leaf that will be written. So it must
 be fast. That, along with the need to detect a potentially empty filename, are
 the drivers behind the fancy iterator chain.
 */
-fn filename_of_path<'a>(send_path : &'a crate::sendpath::SendPath, ext : &'a String) -> std::path::PathBuf {
+fn filename_of_path<'a>(send_path : &'a crate::sendpath::SendPath, ext : &'a str) -> std::path::PathBuf {
   let mut steps = send_path.0.iter().filter_map(|step|
     if let Step::Key(step) = step {
       Some(step.as_str())
@@ -283,16 +290,13 @@ fn filename_of_path<'a>(send_path : &'a crate::sendpath::SendPath, ext : &'a Str
   );
 
   // find a sensible default if the path is empty
-  let first_step = match steps.by_ref().nth(0) {
-    Some(v) => v,
-    None => "_",
-  };
+  let first_step = steps.by_ref().next().unwrap_or("_");
 
   // Build the path as elt1.elt2.elt3.ext, and then convert to return type, ie PathBuf
   use std::iter::once;
   once(first_step)
     .chain(steps)
-    .chain(once(ext.as_str()))
+    .chain(once(ext))
     .intersperse(".")
     .collect::<String>()
     .replace([' ','/'],"_")
@@ -308,7 +312,7 @@ mod test_filename_of_path {
   fn normal() {
     let send_path = SendPath(vec![Step::Index(0), Step::Key("uno".into()), Step::Key("duo".into()), Step::Key("tre".into())]);
     let ext = "wut";
-    let path = super::filename_of_path(&send_path, &ext.into());
+    let path = super::filename_of_path(&send_path, ext);
     assert_eq!(path, PathBuf::from("uno.duo.tre.wut"));
   }
 
@@ -316,7 +320,7 @@ mod test_filename_of_path {
   fn empty() {
     let send_path = SendPath(vec![]);
     let ext = "wut";
-    let path = super::filename_of_path(&send_path, &ext.into());
+    let path = super::filename_of_path(&send_path, ext);
     assert_eq!(path, PathBuf::from("_.wut"));
   }
 
@@ -324,7 +328,7 @@ mod test_filename_of_path {
   fn index_only() {
     let send_path = SendPath(vec![Step::Index(0)]);
     let ext = "wut";
-    let path = super::filename_of_path(&send_path, &ext.into());
+    let path = super::filename_of_path(&send_path, ext);
     assert_eq!(path, PathBuf::from("_.wut"));
   }
 
@@ -332,7 +336,7 @@ mod test_filename_of_path {
   fn several_leading_index() {
     let send_path = SendPath(vec![Step::Index(0),Step::Index(0),Step::Index(0)]);
     let ext = "wut";
-    let path = super::filename_of_path(&send_path, &ext.into());
+    let path = super::filename_of_path(&send_path, ext);
     assert_eq!(path, PathBuf::from("_.wut"));
   }
 
@@ -341,7 +345,7 @@ mod test_filename_of_path {
     // space and /
     let send_path = SendPath(vec![Step::Key("this is a bad/dangerous path".into())]);
     let ext = "wut";
-    let path = super::filename_of_path(&send_path, &ext.into());
+    let path = super::filename_of_path(&send_path, ext);
     assert_eq!(path, PathBuf::from("this_is_a_bad_dangerous_path.wut"));
   }
 }

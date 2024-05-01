@@ -222,10 +222,16 @@ impl std::fmt::Display for SchemaPath {
 
 pub struct EventConverter();
 
+impl Default for EventConverter {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl EventConverter {
   pub fn new() -> Self {Self()}
 
-  fn collect_type<'a>(&self, _path : &JsonPath, ev : &JsonEvent<String>)
+  fn collect_type(&self, _path : &JsonPath, ev : &JsonEvent<String>)
   -> SchemaType
   {
     // So the big question is: should this translation happen: in the parser thread; or in the processor thread?
@@ -239,7 +245,7 @@ impl EventConverter {
       }
 
       JsonEvent::Number(v) => {
-        let number_value : serde_json::Number = match serde_json::from_str(&v) {
+        let number_value : serde_json::Number = match serde_json::from_str(v) {
           Ok(n) => n,
           Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
@@ -277,7 +283,7 @@ impl Handler for EventConverter {
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
   where Snd : for <'x> Sender<Event<Self::V<'x>>>
   {
-    if !self.match_path(&path) { return Ok(()) }
+    if !self.match_path(path) { return Ok(()) }
     let schema_type = self.collect_type(path, ev);
     tx
       .send(Box::new(Event::Value(path.into(), schema_type)))
@@ -294,13 +300,19 @@ pub struct SchemaCollector {
   leaf_paths : LeafPaths
 }
 
+impl Default for SchemaCollector {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl SchemaCollector {
   pub fn new() -> Self {
     Self {leaf_paths: LeafPaths::new()}
   }
 
   // This is where we aggregate the types from the stream of incoming types
-  fn process_event<'a>(&mut self, ev: &Event<SchemaType>) -> () {
+  fn process_event(&mut self, ev: &Event<SchemaType>) {
     match ev {
       Event::Path(_p, _v) => todo!(),
       Event::Value(p, value_type) => {
@@ -321,6 +333,7 @@ impl SchemaCollector {
             use SchemaType::*;
             use NumberType::*;
             let kind_option = leaf_kinds.iter().find(|Leaf{kind: stored_kind, ..}| {
+              #[allow(clippy::match_like_matches_macro)] // no actually it reads better like this
               match (value_type, stored_kind) {
                 (String(_), String(_)) => true,
                 (Number(Unsigned(_)), Number(Unsigned(_))) => true,
@@ -358,6 +371,7 @@ impl SchemaCollector {
           },
           None => {
             // There are as yet no leafs for this path, so create a new leaf_kinds structure
+            #[allow(clippy::mutable_key_type)] // addressed by std::hash::Hash of Leaf
             let mut leaf_kinds = LeafKinds::new();
             leaf_kinds.insert(Leaf::new(value_type.clone()));
             self.leaf_paths.insert(path, leaf_kinds);
@@ -393,7 +407,7 @@ impl std::fmt::Display for SchemaCollector {
         _ => format!("[{}]", kfmts.join(","))
       };
 
-      write!(f, "{kfmt:35} {p}\n")?;
+      writeln!(f, "{kfmt:35} {p}")?;
     };
     Ok(())
   }
@@ -403,8 +417,9 @@ impl Sender<Event<SchemaType>> for SchemaCollector {
   type SendError = String;
 
   // Fit in with what visitor wants
-  fn send<'a>(&mut self, ev: Box<Event<SchemaType>>) -> Result<(), Self::SendError> {
-    Ok(self.process_event(&ev))
+  fn send(&mut self, ev: Box<Event<SchemaType>>) -> Result<(), Self::SendError> {
+    self.process_event(&ev);
+    Ok(())
   }
 }
 
