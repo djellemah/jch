@@ -5,3 +5,4 @@ perf.data.old
 
 # because env var is in here
 .cargo/config.toml
+data
