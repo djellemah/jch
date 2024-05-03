@@ -231,7 +231,11 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 
   // this seems to be about optimal wrt performance
   const CHANNEL_SIZE : usize = 8192;
-  let (tx, rx) = crossbeam::channel::bounded(CHANNEL_SIZE);
+  // let (tx, rx) = crossbeam::channel::bounded(CHANNEL_SIZE);
+  let (tx, rx) = rtrb::RingBuffer::new(CHANNEL_SIZE);
+
+  use crate::channel::Consumer;
+  let (mut tx, mut rx) = (crate::channel::rb::RbProducer(tx), crate::channel::rb::RbConsumer(rx,std::thread::current()));
 
   // consumer thread
   let cons_thr = {
@@ -253,15 +257,12 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 
   // jump through hoops so cons_thr join will work
   {
-    use crate::channel::ChSender;
     let istream = crate::make_readable(maybe_readable_args);
     let mut jevstream = parser::JsonEventParser::new(istream);
 
-    let tx = tx.clone();
     // This will send `sender::Event<plain::JsonEvent>` over the channel
     let visitor = Plain(|_| true);
-    let mut tx_sender: ChSender<<Plain as Handler>::V<'_>> = ChSender(tx);
-    visitor.value(&mut jevstream, JsonPath::new(), 0, &mut tx_sender).unwrap_or_else(|_| println!("uhoh"));
+    visitor.value(&mut jevstream, JsonPath::new(), 0, &mut tx).unwrap_or_else(|_| println!("uhoh"));
     // inner tx dropped automatically here
   }
 
