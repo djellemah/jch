@@ -21,21 +21,15 @@ pub mod rb {
     fn send(&mut self, arg : T) -> Result<(), rtrb::PushError<T>> {
       match self.0.push(arg) {
         Ok(()) => Ok(()),
-        // TODO matching is all messed up here
-        err @ Err(rtrb::PushError::Full(_)) => {
-          // return false tells rapidjson to stop parsing
-          if self.0.is_abandoned() { err }
-          else {
-            // otherwise ringbuffer is full, so wait for signal from consumer
-            std::thread::park();
-            if let Err(rtrb::PushError::Full(rejected)) = err {
-              // recurse instead of loop - to avoid borrow and Rc in Self
-              self.send(rejected)
-            } else {
-              panic!("How can this not be PushError?")
-            }
-          }
+        Err(rtrb::PushError::Full(rejected)) if !self.0.is_abandoned() => {
+          // ringbuffer is full, so wait for signal from consumer
+          std::thread::park();
+          // recurse instead of loop - to avoid borrow and Rc in Self
+          // recursion will not be deep - because of park
+          self.send(rejected)
         }
+        // ringbuffer is closed, or something else went wrong
+        err => err
       }
     }
   }
@@ -44,18 +38,18 @@ pub mod rb {
 
   impl<T> super::Consumer<T> for RbConsumer<T> {
     fn recv(&mut self) -> Result<T, ()> {
-      while !self.0.is_abandoned() {
+      loop {
         match self.0.pop() {
           Ok(jev) => return Ok(jev),
-          Err(rtrb::PopError::Empty) => {
+          Err(rtrb::PopError::Empty) if !self.0.is_abandoned() => {
             // tell the producer to carry on
             self.1.unpark();
             continue
           },
+          // TODO how to hook this into an E type variable
+          _ => return Err(())
         }
-      };
-      // real PITA to get a type constructor in here
-      Err(())
+      }
     }
   }
 
