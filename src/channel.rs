@@ -65,7 +65,7 @@ pub mod rb {
 }
 
 // implementation of Producer and Consumer for crossbeam::channel
-mod ch {
+pub mod ch {
   use super::Event;
 
   pub struct ChSender<T>(pub crossbeam::channel::Sender<Event<T>>);
@@ -77,8 +77,7 @@ mod ch {
   impl<T : Clone + std::fmt::Debug> crate::channel::Sender<Event<T>> for ChSender<T> {
     type SendError=crossbeam::channel::SendError<Event<T>>;
 
-    // Here's where we actually do something with the json event
-    // That is, decouple the handling of the parse events, from the actual parsing stream.
+    // Convert a Json
     fn send<'a>(&mut self, ev: Box<Event<T>>) -> Result<(), Self::SendError> {
       self.0.send(*ev)
     }

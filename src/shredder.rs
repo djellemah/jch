@@ -225,22 +225,27 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
   // Create ShredWriter first, because it might want to stop things.
   let mut writer : ShredWriter<Vec<u8>> = ShredWriter::new(dir, "mpk");
 
-  use crate::plain::Plain;
-  // The event that will be sent across the channel
-  // type ChEvent<'a> = sender::Event<<Plain as Handler>::V<'a>>;
+  // Crossbeam Channel
+  let (tx, rx) =  {
+    // this seems to be about optimal wrt performance
+    const CHANNEL_SIZE : usize = 8192;
+    let (tx, rx) = crossbeam::channel::bounded::<sender::Event<JsonEvent<String>>>(CHANNEL_SIZE);
+    (tx, rx)
+  };
 
-  // this seems to be about optimal wrt performance
-  const CHANNEL_SIZE : usize = 8192;
-  // let (tx, rx) = crossbeam::channel::bounded(CHANNEL_SIZE);
-  let (tx, rx) = rtrb::RingBuffer::new(CHANNEL_SIZE);
-
-  use crate::channel::Consumer;
-  let (mut tx, mut rx) = (crate::channel::rb::RbProducer(tx), crate::channel::rb::RbConsumer(rx,std::thread::current()));
-
+  // Ring Buffer
+/*  let (mut tx, mut rx) =  {
+    // this seems to be about optimal wrt performance
+    const CHANNEL_SIZE : usize = 8192;
+    // let (tx, rx) = crossbeam::channel::bounded(CHANNEL_SIZE);
+    let (tx, rx) = rtrb::RingBuffer::new(CHANNEL_SIZE);
+    (crate::channel::rb::RbProducer(tx), crate::channel::rb::RbConsumer(rx,std::thread::current()))
+  };
+*/
   // consumer thread
   let cons_thr = {
-    // use crate::shredder::ShredWriter;
     std::thread::Builder::new().name("jch recv".into()).spawn(move || {
+      // use crate::channel::Consumer;
       while let Ok(ref event) = rx.recv() {
         use sender::Event;
         let msgpacked_event = match event {
@@ -261,13 +266,15 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
     let mut jevstream = parser::JsonEventParser::new(istream);
 
     // This will send `sender::Event<plain::JsonEvent>` over the channel
+    use crate::plain::Plain;
     let visitor = Plain(|_| true);
+    use crate::channel::ch::ChSender;
+    let mut tx : ChSender<<Plain as Handler>::V<'_>> = ChSender(tx);
     visitor.value(&mut jevstream, JsonPath::new(), 0, &mut tx).unwrap_or_else(|_| println!("uhoh"));
-    // inner tx dropped automatically here
+    // tx dropped automatically here, so channel gets closed
   }
 
   // done with the weird hoops
-  drop(tx);
   cons_thr.join().unwrap();
 }
 
