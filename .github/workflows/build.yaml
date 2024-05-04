@@ -49,6 +49,9 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: true
+
     - run: rustup default nightly
     - name: compile
       run: cargo build --release

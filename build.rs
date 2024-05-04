@@ -2,15 +2,14 @@ fn main() {
     let rapidjson_include = std::env::var("RAPIDJSON_INCLUDE");
     let rapidjson_include = match rapidjson_include {
         Ok(env_value) => std::path::PathBuf::from(env_value),
-        Err(err) => {
-            let msg = format!("\nCan't find RAPIDJSON_INCLUDE env var because {err:?}.\nYou can also set it in .cargo/config.toml under the [env] table.");
-            println!("{msg}");
-            std::process::exit(1)
-        }
+        Err(_) => "rapidjson/include".into(),
     };
 
     if !rapidjson_include.exists() {
-        println!("RAPIDJSON_INCLUDE value {} does not exist.", rapidjson_include.display());
+        println!(r#"
+            RAPIDJSON_INCLUDE env var path "{}" does not exist.
+            You can also set RAPIDJSON_INCLUDE it in .cargo/config.toml under the [env] table.
+        "#, rapidjson_include.display());
         std::process::exit(1)
     }
 

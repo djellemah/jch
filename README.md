@@ -22,8 +22,12 @@ See releases on the right of this repo page. Executables for linux, windows, mac
 
 If there's no executable to suit you, you'll need to build your own:
 
-Clone this repo.
+Clone this repo:
+```
+git clone --recurse-submodules --shallow-submodules https://github.com/djellemah/jch.git
+```
 
+Build it:
 ``` bash
 cargo build --release
 ```
@@ -91,3 +95,19 @@ Left hand column is the aggregated type of all leaves at the path in the right-h
 - `Xxx:nnnn` means `nnnn` was the number of values encountered, ie the number of leaf nodes matching the path.
 
 - If more than one type was encountered at the path, the left hand column will contain an array of characteristics, as above. That is, it's a sum type.
+
+# Advanced Build
+You can use an existing rapidjson tree by specifying the `RAPIDJSON_INCLUDE` env var.
+
+Either on the command line
+
+```
+RAPIDJSON_INCLUDE=your_source_dir cargo build
+```
+
+or in `.config/cargo.toml` like this
+
+```
+[env]
+RAPIDJSON_INCLUDE = "rapidjson/include"
+```
