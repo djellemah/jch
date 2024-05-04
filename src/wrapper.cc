@@ -1,8 +1,7 @@
 // NOTE jch is just what cxx-build wants to call it, because of the cargo package name.
 #include "jch/src/wrapper.h"
 
-// pull in the generated defintions from cxx.rs
-// NOTE jch is just what cxx-build wants to call it, because of the cargo package name.
+// pull in the generated definitions from cxx.rs
 #include "jch/src/rapid.rs.h"
 
 // Turn on simd instructions for the architecture.
@@ -25,6 +24,8 @@
 	This implements the Stream concept.
 
 	We need it here, otherwise there's nowhere to hang the Ch typedef.
+
+	TODO cxx looks to have some template instantiation. That might work.
 */
 class WrapRustStream {
 public:

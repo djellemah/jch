@@ -10,13 +10,18 @@ For example:
 
 Currently only outputs the schema of a json file, in a non-standard format.
 
-Is designed in a modular way so you can use it as a base for filtering json. Somewhat like `jq`.
+Is designed in a modular way so you can use it as a base for filtering json. Somewhat like `jq`, but you write your filtering code in Rust. See 'Design' below for a description.
 
-Might grow into some kind of path-filtering language, like jsonpath or xpath.
+Might grow some kind of path-filtering language, like jsonpath or xpath.
 
 # Download a release
 
 See releases on the right of this repo page. Executables for linux, windows, macos.
+
+1. Download it
+1. rename it to something convenient (`jch` is recommended)
+1. if you're on a unixy OS, say `chmod a+x jch`
+1. copy it to a `bin` directory on your `PATH` somewhere. On a unixy OS `~/bin` often works, likewise `~/.local/bin`
 
 # How to build
 
@@ -36,7 +41,7 @@ cargo build --release
 ``` bash
 curl \
 https://raw.githubusercontent.com/json-iterator/test-data/master/large-file.json \
-| target/release/jch -s
+| jch -s
 ```
 
 will output
@@ -111,3 +116,21 @@ or in `.config/cargo.toml` like this
 [env]
 RAPIDJSON_INCLUDE = "rapidjson/include"
 ```
+
+# Design
+
+This is for the people who read this far, and feel like reading some more. I flatter myself and fondly imagine that you like my prose style.
+
+The fundamental underlying idea here is that a tree can be viewed as a map of paths to leafs, where the more common view is a set of nodes with children. Whatever receives the events from the streaming parser has the responsibility to track changes to the path as they emerges from the event stream. Having the full path for every event addresses what simdjson calls "context blindness".
+
+There are currently 2 backend parsers - the `json_event_parser` crate and the `c++` templates `rapidjson`. Performance is remarkably similar, probably because rapidjson gets slowed down by calling the rust interop functions.
+
+`json_event_parser` is a pull api, so events are extracted directly and sent to the handler. `rapidjson` is a push api, so a lock-free ringbuffer is used to send events to the handler.
+
+To avoid busy-waiting on the ringbuffer, that code path relies on `std::thread::park`. Those seem to not require a mutex. I'm hoping they make use of `pthread`'s signal handling to achieve thread wakeup.
+
+Both of those backend parsers can also use `crossbeam::channel`. Which, in the highly rigorous eyeball-performance tests I've conducted, is not really slower than the ringbuffer. Also, `crossbeam::channel` is noticeably faster than `std::sync::mpsc::channel`. And slightly less pernickety to use in the code.
+
+Anyways, the handler keeps track of the path using `rpds::Vector` whose persitent-ness works well here since the path prefixes quite often change relatively slowly especially at the top level. The handler converts the events (which have `ref`s to the parser's internal buffers) into events that can be distributed to, well whatever other things know how to receive `(path,leaf)` from the handler. There are a few of those sprinkled around the code: one produces the schema output above; the other writes the packets to MessagePack with the intention of implementing the shredder algorithm from the dremel paper one day. Another one just converts the json events back into proper json using `serde_json`.
+
+Filtering can also happen in the handler, where a predicate method allows the receiver of the events to discard events based on their path. That part of the design hasn't found its proper home yet.
