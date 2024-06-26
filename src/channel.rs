@@ -5,12 +5,12 @@ use crate::jsonpath::JsonPath;
 use crate::sender::Sender;
 use crate::sender::Event;
 
-pub trait Producer<T,E> {
+pub trait Producer<T,E : std::error::Error> {
   fn send(&mut self, a: T) -> Result<(),E>;
 }
 
-pub trait Consumer<T> {
-  fn recv(&mut self) -> Result<T,()>;
+pub trait Consumer<T,E : std::error::Error + ?Sized> {
+  fn recv(&mut self) -> Result<T,Box<dyn std::error::Error>>;
 }
 
 // implementation of Producer and Consumer for rtrb ring buffer
@@ -36,8 +36,8 @@ pub mod rb {
 
   pub struct RbConsumer<T>(pub rtrb::Consumer<T>, pub std::thread::Thread);
 
-  impl<T> super::Consumer<T> for RbConsumer<T> {
-    fn recv(&mut self) -> Result<T, ()> {
+  impl<T,E : std::error::Error + ?Sized> super::Consumer<T,E> for RbConsumer<T> {
+    fn recv(&mut self) -> Result<T, Box<dyn std::error::Error>> {
       loop {
         match self.0.pop() {
           Ok(jev) => return Ok(jev),
@@ -46,20 +46,18 @@ pub mod rb {
             self.1.unpark();
             continue
           },
-          // TODO how to hook this into an E type variable
-          _ => return Err(())
+          Err(err) => return Err(Box::new(err))
         }
       }
     }
   }
 
-  impl<T : Clone + std::fmt::Debug> super::Sender<T> for RbProducer<T> {
-    type SendError=rtrb::PushError<T>;
-
+  impl<T : Clone + std::fmt::Debug + 'static> super::Sender<T> for RbProducer<super::Event<T>> {
     // Here's where we actually do something with the json event
     // That is, decouple the handling of the parse events, from the actual parsing stream.
-    fn send(&mut self, ev: Box<T>) -> Result<(), Self::SendError> {
-      super::Producer::send(self, *ev)
+    fn send(&mut self, ev: Box<crate::sender::Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
+      // wrangle rtrb::PushError into std::error::Error
+      Ok(super::Producer::send(self, *ev)?)
     }
   }
 }
@@ -70,16 +68,15 @@ pub mod ch {
 
   pub struct ChSender<T>(pub crossbeam::channel::Sender<Event<T>>);
 
-  impl<T,E> super::Producer<T, E> for ChSender<T> {
+  impl<T,E : std::error::Error> super::Producer<T, E> for ChSender<T> {
     fn send(&mut self, _: T) -> Result<(), E> { todo!() }
   }
 
-  impl<T : Clone + std::fmt::Debug> crate::channel::Sender<Event<T>> for ChSender<T> {
-    type SendError=crossbeam::channel::SendError<Event<T>>;
-
+  impl<T : Clone + std::fmt::Debug + std::marker::Send + 'static> crate::channel::Sender<T> for ChSender<T> {
     // Convert a Json
-    fn send<'a>(&mut self, ev: Box<Event<T>>) -> Result<(), Self::SendError> {
-      self.0.send(*ev)
+    fn send(&mut self, ev: Box<crate::sender::Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
+      // wrangle crossbeam::channel::SendError into std::error::Error
+      Ok(self.0.send(*ev)?)
     }
   }
 }
@@ -87,12 +84,17 @@ pub mod ch {
 pub fn channels(jev : &mut dyn JsonEvents<String>) {
   // this seems to be about optimal wrt performance
   const RING_BUFFER_BOUND : usize = (2usize).pow(21); // 8192
-  let (tx, rx) = rtrb::RingBuffer::new(RING_BUFFER_BOUND);
+
+  // Events in the RingBuffer contains whatever Valuer is sending, so JsonEvent<String>
+  type SendValue = serde_json::Value;
+
+  let (tx, rx) = rtrb::RingBuffer::<Event<SendValue>>::new(RING_BUFFER_BOUND);
   let (mut tx, mut rx) = (rb::RbProducer(tx), rb::RbConsumer(rx,std::thread::current()));
 
   // consumer thread
   let cons_thr = std::thread::spawn(move || {
-    while let Ok(event) = <rb::RbConsumer<Event<_>> as Consumer<Event<_>>>::recv(&mut rx) {
+    let rx = &mut rx as &mut dyn Consumer<Event<SendValue>, dyn std::error::Error>;
+    while let Ok(event) = rx.recv() {
       match event  {
         Event::Path(depth,path) => println!("{depth}:{}", path),
         Event::Value(p,v) => println!("{p} => {v}"),
@@ -105,7 +107,8 @@ pub fn channels(jev : &mut dyn JsonEvents<String>) {
   {
     use crate::handler::Handler;
     let visitor = crate::valuer::Valuer(|_| true);
-    visitor.value(jev, JsonPath::new(), 0, &mut tx).unwrap_or_else(|_| println!("uhoh"));
+    let tx = &mut tx as &mut dyn crate::sender::Sender<SendValue>;
+    visitor.value(jev, JsonPath::new(), 0, tx).unwrap_or_else(|_| println!("uhoh"));
   }
 
   cons_thr.join().unwrap();

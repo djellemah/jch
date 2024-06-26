@@ -39,19 +39,18 @@ macro_rules! package {
 /// Converts json events from the parser to serde_json, and then calls the function.
 pub struct Valuer(pub fn(&JsonPath) -> bool);
 
-impl Handler for Valuer
-{
-  type V<'l> = serde_json::Value;
+type SendValue = serde_json::Value;
 
+impl Handler<dyn Sender<SendValue>, SendValue> for Valuer
+{
   fn match_path(&self, path: &JsonPath) -> bool {
     self.0(path)
   }
 
   // convert the string contained in the JsonEvent into a serde_json::Value
   // and call tx.send with that.
-  fn maybe_send_value<Snd>(&self, path : &JsonPath, jev : &JsonEvent<String>, tx : &mut Snd)
-  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
-  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  fn maybe_send_value(&self, path : &JsonPath, jev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'static))
+  -> Result<(),Box<dyn std::error::Error>>
   {
     use JsonEvent::*;
     if !self.match_path(path) {
@@ -90,12 +89,10 @@ impl Handler for Valuer
 
 pub struct ValueSender;
 
-impl Sender<Event<serde_json::Value>> for ValueSender {
-  type SendError = String;
-
+impl Sender<serde_json::Value> for ValueSender {
   // Here's where we actually do something with the json event
   // That is, decouple the handling of the parse events, from the actual parsing stream.
-  fn send<'a>(&mut self, ev: Box<Event<serde_json::Value>>) -> Result<(), Self::SendError> {
+  fn send<'a>(&mut self, ev: Box<Event<serde_json::Value>>) -> Result<(), Box<dyn std::error::Error>> {
     Ok(println!("sent {ev:?}"))
   }
 }

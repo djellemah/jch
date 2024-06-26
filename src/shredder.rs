@@ -86,10 +86,8 @@ impl<'a, V: AsRef<[u8]> + std::fmt::Debug> ShredWriter<V>
   }
 }
 
-impl<V : AsRef<[u8]> + std::fmt::Debug> sender::Sender<sender::Event<V>> for ShredWriter<V> {
-  type SendError = String;
-
-  fn send(&mut self, ev: Box<sender::Event<V>>) -> Result<(), Self::SendError> {
+impl<V : AsRef<[u8]> + std::fmt::Debug> sender::Sender<V> for ShredWriter<V> {
+  fn send(&mut self, ev: Box<sender::Event<V>>) -> Result<(), Box<dyn std::error::Error>> {
     self.write_msgpack_value(&ev);
     Ok(())
   }
@@ -174,11 +172,12 @@ impl MsgPacker {
   }
 }
 
-impl Handler for MsgPacker {
-  // V is the type of the data that Event contains
-  // TODO both of this work with only the need to borrow buf or not.
-  // type V<'l> = &'l[u8];
-  type V<'l> = Vec<u8>;
+type SendValue = Vec<u8>;
+
+use crate::sender::Sender;
+
+impl Handler<dyn Sender<SendValue>,SendValue> for MsgPacker {
+  // TODO handle both ref to buffer and buffer
 
   // filters events from the streaming parser
   fn match_path(&self, _json_path : &JsonPath) -> bool {
@@ -186,10 +185,8 @@ impl Handler for MsgPacker {
   }
 
   // encode values as MessagePack, then send to shredder
-  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Snd)
-  -> Result<(),<Snd as sender::Sender<sender::Event<<MsgPacker as Handler>::V<'_>>>>::SendError>
-  // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
-  where Snd : for <'x> sender::Sender<sender::Event<Self::V<'x>>>
+  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'static))
+  -> Result<(), Box<dyn std::error::Error>>
   {
     if !self.match_path(path) { return Ok(()) }
     let send_event = encode_to_msgpack::<JsonPath,String>(path, ev);
@@ -201,8 +198,8 @@ impl Handler for MsgPacker {
   }
 }
 
-pub fn shred<S>(dir : &std::path::PathBuf, maybe_readable_args : &[S])
-where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
+pub fn shred<Stringish>(dir : &std::path::PathBuf, maybe_readable_args : &[Stringish])
+where Stringish : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
 {
   let istream = crate::make_readable(maybe_readable_args);
   let mut jevstream = parser::JsonEventParser::new(istream);
@@ -269,7 +266,11 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
     use crate::plain::Plain;
     let visitor = Plain(|_| true);
     use crate::channel::ch::ChSender;
-    let mut tx : ChSender<<Plain as Handler>::V<'_>> = ChSender(tx);
+
+    // must correspond to whatever Plain is using
+    type SendValue = crate::parser::JsonEvent<String>;
+
+    let mut tx : ChSender<SendValue> = ChSender(tx);
     visitor.value(&mut jevstream, JsonPath::new(), 0, &mut tx).unwrap_or_else(|_| println!("uhoh"));
     // tx dropped automatically here, so channel gets closed
   }

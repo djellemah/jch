@@ -3,7 +3,6 @@ This traverses/handles the incoming json events from the streaming parser.
 */
 use crate::parser::JsonEvents;
 use crate::parser::JsonEvent;
-use crate::sender::Sender;
 use crate::sender::Event;
 use crate::jsonpath::*;
 
@@ -16,22 +15,16 @@ threading those functions through the JsonEvent handlers.
 Effectively it's a
 visitor with accept = match_path and visit = maybe_send_value
 */
-pub trait Handler {
-  /// value contained by Event
-  // Lifetime bound is so that events are allowed the shortest lifetime possible,
-  // hence the where clauses and higher-ranked for declarations in the below trait methods.
-  type V<'l> where Self : 'l;
-
+pub trait Handler<Sender,SendValue>
+where
+  Sender : crate::sender::Sender<SendValue> + ?Sized
+{
   // TODO this is optional?
   fn match_path(&self, path : &JsonPath) -> bool;
 
   /// This will be called for each leaf value, along with its path.
-  fn maybe_send_value<Snd>(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Snd)
-  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
-  // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
-  where
-    Snd : for <'x> Sender<Event<Self::V<'x>>>,
-    for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
+  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Sender)
+  -> Result<(),Box<dyn std::error::Error>>
   ;
 
   /// Handle all arrays.
@@ -40,11 +33,8 @@ pub trait Handler {
   /// objects are sent to object(...)
   //
   // depth: parents.len < depth because depth additionally counts StartObject and StartArray
-  fn array<Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd )
-  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
-  where
-    Snd : for <'x> Sender<Event<Self::V<'x>>>,
-    for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
+  fn array(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Sender )
+  -> Result<(), Box<dyn std::error::Error>>
   {
     let mut index = 0;
     loop {
@@ -78,11 +68,8 @@ pub trait Handler {
   }
 
   /// handle objects.
-  fn object<Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd )
-  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
-  where
-    Snd : for <'x> Sender<Event<Self::V<'x>>>,
-    for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
+  fn object(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Sender )
+  -> Result<(), Box<dyn std::error::Error>>
   {
     loop {
       match jevs.next_event() {
@@ -113,12 +100,8 @@ pub trait Handler {
   }
 
   /// Handle String Number Boolean Null (ie non-recursive)
-  #[allow(unused_variables)]
-  fn value<Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd)
-  -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
-  where
-    Snd : for <'x> Sender<Event<Self::V<'x>>>,
-    for <'x> <Self as Handler>::V<'x> : std::fmt::Debug
+  fn value(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Sender)
+  -> Result<(), Box<dyn std::error::Error>>
   {
     // json has exactly one top-level object
     match jevs.next_event() {

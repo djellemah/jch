@@ -270,17 +270,15 @@ impl EventConverter {
   }
 }
 
-impl Handler for EventConverter {
-  type V<'l> = SchemaType;
+type SendValue = SchemaType;
 
+impl Handler<dyn Sender<SendValue>,SendValue> for EventConverter {
   // collect all paths
   #[inline]
   fn match_path(&self, _json_path : &JsonPath) -> bool {true}
 
-  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Snd)
-  -> Result<(),<Snd as Sender<Event<<EventConverter as Handler>::V<'_>>>>::SendError>
-  // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
-  where Snd : for <'x> Sender<Event<Self::V<'x>>>
+  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'static))
+  -> Result<(),Box<dyn std::error::Error>>
   {
     if !self.match_path(path) { return Ok(()) }
     let schema_type = self.collect_type(path, ev);
@@ -412,11 +410,9 @@ impl std::fmt::Display for SchemaCollector {
   }
 }
 
-impl Sender<Event<SchemaType>> for SchemaCollector {
-  type SendError = String;
-
+impl Sender<SchemaType> for SchemaCollector {
   // Fit in with what visitor wants
-  fn send(&mut self, ev: Box<Event<SchemaType>>) -> Result<(), Self::SendError> {
+  fn send(&mut self, ev: Box<Event<SchemaType>>) -> Result<(), Box<dyn std::error::Error>> {
     self.process_event(&ev);
     Ok(())
   }
