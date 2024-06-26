@@ -26,7 +26,7 @@ pub trait Handler {
   fn match_path(&self, path : &JsonPath) -> bool;
 
   /// This will be called for each leaf value, along with its path.
-  fn maybe_send_value<'a, Snd>(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Snd)
+  fn maybe_send_value<Snd>(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   // the `for` is critical here because 'x must have a longer lifetime than 'a but a shorter lifetime than 'l
   where
@@ -40,7 +40,7 @@ pub trait Handler {
   /// objects are sent to object(...)
   //
   // depth: parents.len < depth because depth additionally counts StartObject and StartArray
-  fn array<'a, Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd )
+  fn array<Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd )
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
@@ -78,7 +78,7 @@ pub trait Handler {
   }
 
   /// handle objects.
-  fn object<'a, Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd )
+  fn object<Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd )
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
@@ -114,7 +114,7 @@ pub trait Handler {
 
   /// Handle String Number Boolean Null (ie non-recursive)
   #[allow(unused_variables)]
-  fn value<'a,Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd)
+  fn value<Snd>(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Snd)
   -> Result<(),<Snd as Sender<Event<<Self as Handler>::V<'_>>>>::SendError>
   where
     Snd : for <'x> Sender<Event<Self::V<'x>>>,
