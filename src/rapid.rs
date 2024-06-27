@@ -235,7 +235,7 @@ use crate::parser::JsonEvents;
 
 impl JsonEvents<'_,String> for ChannelStreamer {
   #[inline]
-  fn next_event<'a>(&'a mut self) -> std::result::Result<JsonEvent<std::string::String>, Box<(dyn std::error::Error + 'static)>> {
+  fn next_event<'a>(&'a mut self) -> std::result::Result<JsonEvent<std::string::String>, Box<(dyn std::error::Error)>> {
     while !self.0.is_abandoned() {
       match self.0.pop() {
         Ok(jev) => return Ok(jev),

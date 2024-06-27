@@ -272,12 +272,12 @@ impl EventConverter {
 
 type SendValue = SchemaType;
 
-impl Handler<dyn Sender<SendValue>,SendValue> for EventConverter {
+impl<'l> Handler<'l, (dyn Sender<SendValue> + 'l),SendValue> for EventConverter {
   // collect all paths
   #[inline]
   fn match_path(&self, _json_path : &JsonPath) -> bool {true}
 
-  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'static))
+  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'l))
   -> Result<(),Box<dyn std::error::Error>>
   {
     if !self.match_path(path) { return Ok(()) }

@@ -176,7 +176,7 @@ type SendValue = Vec<u8>;
 
 use crate::sender::Sender;
 
-impl Handler<dyn Sender<SendValue>,SendValue> for MsgPacker {
+impl<'l> Handler<'l, (dyn Sender<SendValue> + 'l),SendValue> for MsgPacker {
   // TODO handle both ref to buffer and buffer
 
   // filters events from the streaming parser
@@ -185,7 +185,7 @@ impl Handler<dyn Sender<SendValue>,SendValue> for MsgPacker {
   }
 
   // encode values as MessagePack, then send to shredder
-  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'static))
+  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'l))
   -> Result<(), Box<dyn std::error::Error>>
   {
     if !self.match_path(path) { return Ok(()) }

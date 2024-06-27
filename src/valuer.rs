@@ -41,7 +41,7 @@ pub struct Valuer(pub fn(&JsonPath) -> bool);
 
 type SendValue = serde_json::Value;
 
-impl Handler<dyn Sender<SendValue>, SendValue> for Valuer
+impl<'l> Handler<'l, (dyn Sender<SendValue> + 'l),SendValue> for Valuer
 {
   fn match_path(&self, path: &JsonPath) -> bool {
     self.0(path)
@@ -49,7 +49,7 @@ impl Handler<dyn Sender<SendValue>, SendValue> for Valuer
 
   // convert the string contained in the JsonEvent into a serde_json::Value
   // and call tx.send with that.
-  fn maybe_send_value(&self, path : &JsonPath, jev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'static))
+  fn maybe_send_value(&self, path : &JsonPath, jev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'l))
   -> Result<(),Box<dyn std::error::Error>>
   {
     use JsonEvent::*;

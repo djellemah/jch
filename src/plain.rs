@@ -12,7 +12,7 @@ pub struct Plain(pub fn(&JsonPath) -> bool);
 
 type SendValue = JsonEvent<String>;
 
-impl Handler<dyn Sender<SendValue>,SendValue> for Plain
+impl<'l> Handler<'l, dyn Sender<SendValue> + 'l,SendValue> for Plain
 where SendValue: std::fmt::Debug + Clone
 {
   fn match_path(&self, path : &JsonPath) -> bool {
@@ -20,7 +20,7 @@ where SendValue: std::fmt::Debug + Clone
   }
 
   /// send the event provided the fn at self.0 returns true
-  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'static))
+  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'l))
   -> Result<(),Box<dyn std::error::Error>>
   {
     if self.match_path(path) {

@@ -15,9 +15,9 @@ threading those functions through the JsonEvent handlers.
 Effectively it's a
 visitor with accept = match_path and visit = maybe_send_value
 */
-pub trait Handler<Sender,SendValue>
+pub trait Handler<'l, Sender,SendValue>
 where
-  Sender : crate::sender::Sender<SendValue> + ?Sized
+  Sender : crate::sender::Sender<SendValue> + ?Sized + 'l
 {
   // TODO this is optional?
   fn match_path(&self, path : &JsonPath) -> bool;
