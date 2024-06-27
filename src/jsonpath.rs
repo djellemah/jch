@@ -93,6 +93,12 @@ impl From<&std::borrow::Cow<'_, str>> for Step {
   fn from(value: &std::borrow::Cow<'_, str>) -> Self { Self::Key(value.to_owned().into()) }
 }
 
+impl AsRef<Step> for Step {
+  fn as_ref(&self) -> &Step {
+    self
+  }
+}
+
 // https://docs.rs/rpds/latest/rpds/list/struct.List.html
 // type JsonPath = rpds::List<Step>;
 pub type JsonPath = rpds::Vector<Step>;
