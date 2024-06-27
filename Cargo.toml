@@ -5,30 +5,18 @@ edition = "2021"
 default-run = "jch"
 
 [dependencies]
-serde_json = "*"
 # see also https://docs.rs/im/latest/im/
 rpds = { version = "1.1", features = ["serde"] }
 rmp = "0.8.14"
-
-####################
-# json parsers
-# This one didn't do what I want.
-# json_stream = {version = "*", git = "https://github.com/alexmaco/json_stream"}
 json-event-parser = {version = "0.2.0"}
 crossbeam = "0.8"
 rustc-hash = "1.1.0"
 cxx = "1.0"
 rtrb = "0.3"
 
-# Nah. Cmon people srsly. Direct ffi is not what I'm looking for.
-# https://dev.to/leehambley/sending-complex-structs-to-ruby-from-rust-4e61
-
-# rutie is a bit weird
-# https://github.com/danielpclark/rutie#using-ruby-in-rust
-# rutie = "0.8"
-
 # https://github.com/matsadler/magnus#embedding-ruby-in-rust
-magnus = { version = "0.6", features = ["embed"] }
+magnus = { version = "0.7", features = ["embed"] }
+serde_json = "1.0.132"
 
 [build-dependencies]
 cxx-build = "1.0"
