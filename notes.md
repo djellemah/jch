@@ -1,3 +1,6 @@
+# lots of jq implementations
+https://github.com/fiatjaf/awesome-jq
+
 # zerocopy
 https://crates.io/crates/zerocopy
 
