@@ -117,6 +117,24 @@ or in `.config/cargo.toml` like this
 RAPIDJSON_INCLUDE = "rapidjson/include"
 ```
 
+# 1000 words
+```
+                                                                            +------------+
++----------+   +----------+                                             +->-| FnSnd      |
+|RapidJson |->-|RingBuffer|--->--+                                      |   +------------+
++----------+   +----------+      |                                      |                
+                             +--------+     +---------+     +--------+  |   +------------+
+                             | Parser |-->--| Handler |-->--| Sender |--+->-| Channel    |
+                             +--------+     +---------+     +--------+  |   +------------+
+      +-----------------+        |                                      |                 
+      |json-event-parser|--->----+                                      |   +------------+
+      +-----------------+                                               +->-| Schema     |
+                                                                        |   +------------+
+                                                                        |                 
+                                                                        |   +------------+
+                                                                        +->-| RingBuffer |
+                                                                            +------------+
+```
 # Design
 
 This is for the people who read this far, and feel like reading some more. I flatter myself and fondly imagine that you like my prose style.
