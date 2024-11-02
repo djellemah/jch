@@ -223,22 +223,12 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
   let mut writer : ShredWriter<Vec<u8>> = ShredWriter::new(dir, "mpk");
 
   // Crossbeam Channel
-  let (tx, rx) =  {
+  let (mut tx, rx) =  {
     // this seems to be about optimal wrt performance
     const CHANNEL_SIZE : usize = 8192;
-    let (tx, rx) = crossbeam::channel::bounded::<sender::Event<JsonEvent<String>>>(CHANNEL_SIZE);
-    (tx, rx)
+    crossbeam::channel::bounded::<sender::Event<JsonEvent<String>>>(CHANNEL_SIZE)
   };
 
-  // Ring Buffer
-/*  let (mut tx, mut rx) =  {
-    // this seems to be about optimal wrt performance
-    const CHANNEL_SIZE : usize = 8192;
-    // let (tx, rx) = crossbeam::channel::bounded(CHANNEL_SIZE);
-    let (tx, rx) = rtrb::RingBuffer::new(CHANNEL_SIZE);
-    (crate::channel::rb::RbProducer(tx), crate::channel::rb::RbConsumer(rx,std::thread::current()))
-  };
-*/
   // consumer thread
   let cons_thr = {
     std::thread::Builder::new().name("jch recv".into()).spawn(move || {
@@ -265,12 +255,7 @@ where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
     // This will send `sender::Event<plain::JsonEvent>` over the channel
     use crate::plain::Plain;
     let visitor = Plain(|_| true);
-    use crate::channel::ch::ChSender;
 
-    // must correspond to whatever Plain is using
-    type SendValue = crate::parser::JsonEvent<String>;
-
-    let mut tx : ChSender<SendValue> = ChSender(tx);
     visitor.value(&mut jevstream, JsonPath::new(), 0, &mut tx).unwrap_or_else(|_| println!("uhoh"));
     // tx dropped automatically here, so channel gets closed
   }
