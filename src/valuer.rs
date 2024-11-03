@@ -26,7 +26,7 @@ macro_rules! package {
     $tx.send( &Event::Path(0, SendPath::from($parents)) )
   };
   ($tx:ident,0,$parents:expr) => {
-    $tx.send( Box::new(Event::Path(0, SendPath::from($parents))) )
+    $tx.send( crate::sender::Ptr::new(Event::Path(0, SendPath::from($parents))) )
   };
   ($tx:ident,$depth:ident,&$parents:expr) => {
     $tx.send( &Event::Path(0, SendPath::from($parents)) )
@@ -49,31 +49,31 @@ impl<'l> Handler<'l, (dyn Sender<SendValue> + 'l),SendValue> for Valuer
 
   // convert the string contained in the JsonEvent into a serde_json::Value
   // and call tx.send with that.
-  fn maybe_send_value(&self, path : &JsonPath, jev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'l))
+  fn maybe_send_value(&self, path : &JsonPath, jev : crate::sender::Ptr<JsonEvent<String>>, tx : &mut (dyn Sender<SendValue> + 'l))
   -> Result<(),Box<dyn std::error::Error>>
   {
     use JsonEvent::*;
     if !self.match_path(path) {
       return package!(tx,0,path)
     }
-    match jev {
+    match jev.as_ref() {
       String(v) => {
         let value = serde_json::Value::String(v.to_string());
         // let path = path.iter().map(|s| s.clone()).collect::<Vec<Step>>();
-        tx.send(Box::new(Event::Value(SendPath::from(path),value)))
+        tx.send(crate::sender::Ptr::new(Event::Value(SendPath::from(path),value.into())))
       }
       Number(v) => {
         let value : serde_json::Number = match serde_json::from_str(v) {
             Ok(n) => n,
             Err(msg) => panic!("{v} appears to be not-a-number {msg}"),
         };
-        tx.send(Box::new(Event::Value(SendPath::from(path), serde_json::Value::Number(value))))
+        tx.send(crate::sender::Ptr::new(Event::Value(SendPath::from(path), serde_json::Value::Number(value).into())))
       }
       Boolean(v) => {
-        tx.send(Box::new(Event::Value(SendPath::from(path), serde_json::Value::Bool(*v))))
+        tx.send(crate::sender::Ptr::new(Event::Value(SendPath::from(path), serde_json::Value::Bool(*v).into())))
       }
       Null => {
-        tx.send(Box::new(Event::Value(SendPath::from(path), serde_json::Value::Null)))
+        tx.send(crate::sender::Ptr::new(Event::Value(SendPath::from(path), serde_json::Value::Null.into())))
       }
       // should never receive these. TODO but that fact should be encoded in types.
       StartArray => todo!(),
@@ -92,7 +92,7 @@ pub struct ValueSender;
 impl Sender<serde_json::Value> for ValueSender {
   // Here's where we actually do something with the json event
   // That is, decouple the handling of the parse events, from the actual parsing stream.
-  fn send<'a>(&mut self, ev: Box<Event<serde_json::Value>>) -> Result<(), Box<dyn std::error::Error>> {
+  fn send<'a>(&mut self, ev: crate::sender::Ptr<Event<serde_json::Value>>) -> Result<(), Box<dyn std::error::Error>> {
     Ok(println!("sent {ev:?}"))
   }
 }

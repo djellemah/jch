@@ -77,7 +77,8 @@ impl<'a, V: AsRef<[u8]> + std::fmt::Debug> ShredWriter<V>
       {
         let mut file = self.find_or_create(send_path);
         use std::io::Write;
-        file.write_all(v.as_ref()).unwrap();
+        // is a Vec inside an Arc, hence the double as_ref
+        file.write_all(v.as_ref().as_ref()).unwrap();
       },
       Event::Path(_depth,_path) => todo!("Event::Path"),
       Event::Finished => todo!("Event::Finished"),
@@ -87,7 +88,7 @@ impl<'a, V: AsRef<[u8]> + std::fmt::Debug> ShredWriter<V>
 }
 
 impl<V : AsRef<[u8]> + std::fmt::Debug> sender::Sender<V> for ShredWriter<V> {
-  fn send(&mut self, ev: Box<sender::Event<V>>) -> Result<(), Box<dyn std::error::Error>> {
+  fn send(&mut self, ev: crate::sender::Ptr<sender::Event<V>>) -> Result<(), Box<dyn std::error::Error>> {
     self.write_msgpack_value(&ev);
     Ok(())
   }
@@ -109,7 +110,7 @@ where
   match ev {
     JsonEvent::String(v) => {
       match rmp::encode::write_str (&mut buf, v.as_ref() ) {
-        Ok(()) => Event::Value(SendPath::from(path), buf),
+        Ok(()) => Event::Value(SendPath::from(path), buf.into()),
         Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
       }
     }
@@ -122,17 +123,17 @@ where
 
       if number_value.is_u64() {
         match rmp::encode::write_uint(&mut buf, number_value.as_u64().unwrap()) {
-          Ok(_) => Event::Value(SendPath::from(path), buf),
+          Ok(_) => Event::Value(SendPath::from(path), buf.into()),
           Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
         }
       } else if number_value.is_i64() {
         match rmp::encode::write_sint(&mut buf, number_value.as_i64().unwrap()) {
-          Ok(_) => Event::Value(SendPath::from(path), buf),
+          Ok(_) => Event::Value(SendPath::from(path), buf.into()),
           Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
         }
       } else if number_value.is_f64() {
         match rmp::encode::write_f64(&mut buf, number_value.as_f64().unwrap()) {
-          Ok(()) => Event::Value(SendPath::from(path), buf),
+          Ok(()) => Event::Value(SendPath::from(path), buf.into()),
           Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
         }
       } else {
@@ -142,14 +143,14 @@ where
 
     JsonEvent::Boolean(v) => {
       match rmp::encode::write_bool(&mut buf, *v) {
-        Ok(()) => Event::Value(SendPath::from(path), buf),
+        Ok(()) => Event::Value(SendPath::from(path), buf.into()),
         Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
       }
     }
 
     JsonEvent::Null => {
       match rmp::encode::write_nil(&mut buf) {
-        Ok(()) => Event::Value(SendPath::from(path), buf),
+        Ok(()) => Event::Value(SendPath::from(path), buf.into()),
         Err(err) => Event::Error(path.into(), format!("msgpack error {err:?}")),
       }
     }
@@ -185,14 +186,14 @@ impl<'l> Handler<'l, (dyn Sender<SendValue> + 'l),SendValue> for MsgPacker {
   }
 
   // encode values as MessagePack, then send to shredder
-  fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'l))
+  fn maybe_send_value(&self, path : &JsonPath, ev : crate::sender::Ptr<JsonEvent<String>>, tx : &mut (dyn Sender<SendValue> + 'l))
   -> Result<(), Box<dyn std::error::Error>>
   {
     if !self.match_path(path) { return Ok(()) }
-    let send_event = encode_to_msgpack::<JsonPath,String>(path, ev);
+    let send_event = encode_to_msgpack::<JsonPath,String>(path, ev.as_ref());
     // OPT must this really be in a box?
     tx
-      .send(Box::new(send_event))
+      .send(sender::Ptr::new(send_event))
       .unwrap_or_else(|err| panic!("could not send event {ev:?} because {err:?}"));
     Ok(())
   }
