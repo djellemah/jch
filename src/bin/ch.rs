@@ -31,7 +31,8 @@ That rust prolog
 mod ruby {
   // use std::intrinsics::pref_align_of;
 
-use jch::sender::Sender;
+  use jch::sender::Sender;
+  use jch::sender::Ptr;
   use jch::jsonpath;
   use jch::jsonpath::JsonPath;
   use jch::parser::JsonEvent;
@@ -64,7 +65,7 @@ use jch::sender::Sender;
     }
   }
 
-  impl<'l> jch::handler::Handler<'l, dyn jch::sender::Sender<SendValue> + 'l,SendValue> for RubyHandler<'l>
+  impl<'l> jch::handler::Handler<'l, dyn Sender<SendValue> + 'l,SendValue> for RubyHandler<'l>
   where SendValue: std::fmt::Debug + Clone
   {
     fn match_path(&self, path : &JsonPath) -> bool {
@@ -85,13 +86,13 @@ use jch::sender::Sender;
     }
 
     /// send the event provided the fn at self.0 returns true
-    fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'l))
+    fn maybe_send_value(&self, path : &JsonPath, ev : Ptr<JsonEvent<String>>, tx : &mut (dyn Sender<SendValue> + 'l))
     -> Result<(),Box<dyn std::error::Error>>
     {
       if self.match_path(path) {
         use jch::sender::Event;
         tx
-          .send(Box::new(Event::Value(path.into(), ev.clone())))
+          .send(Ptr::new(Event::Value(path.into(), ev.clone())))
           .unwrap_or_else(|err| eprintln!("error sending {ev:?} because {err:?}"))
       }
       // ;
