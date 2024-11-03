@@ -232,9 +232,9 @@ pub fn parse( istream : Box<dyn std::io::BufRead> ) {
 /// Shim to present a channel as a JsonEvents pull source.
 struct ChannelStreamer(rtrb::Consumer<JsonEvent<String>>, std::thread::Thread);
 
-use crate::parser::JsonEvents;
+use crate::parser::JsonEventSource;
 
-impl JsonEvents<'_,String> for ChannelStreamer {
+impl JsonEventSource<'_,String> for ChannelStreamer {
   #[inline]
   fn next_event(&mut self) -> std::result::Result<crate::sender::Ptr<JsonEvent<String>>, Box<dyn std::error::Error>> {
     while !self.0.is_abandoned() {

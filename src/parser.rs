@@ -90,7 +90,7 @@ fn from_vec() {
 
 /// Source of Json parse events, ie the json parser
 /// All interfaces with the parser must happen through this.
-pub trait JsonEvents<'l, Stringish>
+pub trait JsonEventSource<'l, Stringish>
 where Stringish : 'l + AsRef<[u8]> + From<String> // because we want storage + conversion from Cow<'_,str>
 {
    fn next_event(&mut self) -> Result<crate::sender::Ptr<JsonEvent<Stringish>>, Box<dyn std::error::Error>>;
@@ -105,7 +105,7 @@ impl JsonEventParser {
   }
 }
 
-impl<'l, Stringish> JsonEvents<'l, Stringish> for JsonEventParser
+impl<'l, Stringish> JsonEventSource<'l, Stringish> for JsonEventParser
 where
 Stringish : std::convert::AsRef<[u8]> + std::convert::From<std::string::String> + 'l
 {

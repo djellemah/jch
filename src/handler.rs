@@ -1,7 +1,7 @@
 /*!
 This traverses/handles the incoming json events from the streaming parser.
 */
-use crate::parser::JsonEvents;
+use crate::parser::JsonEventSource;
 use crate::parser::JsonEvent;
 use crate::sender::Event;
 use crate::sender::Ptr;
@@ -34,7 +34,7 @@ where
   /// objects are sent to object(...)
   //
   // depth: parents.len < depth because depth additionally counts StartObject and StartArray
-  fn array(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Sender )
+  fn array(&self, jevs : &mut dyn JsonEventSource<String>, parents : JsonPath, depth : usize, tx : &mut Sender )
   -> Result<(), Box<dyn std::error::Error>>
   {
     let mut index = 0;
@@ -69,7 +69,7 @@ where
   }
 
   /// handle objects.
-  fn object(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Sender )
+  fn object(&self, jevs : &mut dyn JsonEventSource<String>, parents : JsonPath, depth : usize, tx : &mut Sender )
   -> Result<(), Box<dyn std::error::Error>>
   {
     loop {
@@ -101,7 +101,7 @@ where
   }
 
   /// Handle String Number Boolean Null (ie non-recursive)
-  fn value(&self, jevs : &mut dyn JsonEvents<String>, parents : JsonPath, depth : usize, tx : &mut Sender)
+  fn value(&self, jevs : &mut dyn JsonEventSource<String>, parents : JsonPath, depth : usize, tx : &mut Sender)
   -> Result<(), Box<dyn std::error::Error>>
   {
     // json has exactly one top-level object

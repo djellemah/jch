@@ -6,7 +6,7 @@ This parses a json document and collects the type for each path, including some 
 
 use std::cell::RefCell;
 
-use crate::parser::JsonEvents;
+use crate::parser::JsonEventSource;
 use crate::handler::Handler;
 use crate::sender::Sender;
 use crate::jsonpath::JsonPath;
@@ -418,7 +418,7 @@ impl Sender<SchemaType> for SchemaCollector {
   }
 }
 
-pub fn schema(wr :&mut dyn std::io::Write, jev : &mut dyn JsonEvents<String>) {
+pub fn schema(wr :&mut dyn std::io::Write, jev : &mut dyn JsonEventSource<String>) {
   // collect and display schema of input
   let mut collector = SchemaCollector::new();
 
