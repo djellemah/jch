@@ -93,7 +93,7 @@ fn from_vec() {
 pub trait JsonEvents<'l, Stringish>
 where Stringish : 'l + AsRef<[u8]> + From<String> // because we want storage + conversion from Cow<'_,str>
 {
-   fn next_event(&mut self) -> Result<JsonEvent<Stringish>, Box<dyn std::error::Error>>;
+   fn next_event(&mut self) -> Result<crate::sender::Ptr<JsonEvent<Stringish>>, Box<dyn std::error::Error>>;
 }
 
 /// Source of json events from json_event_parser
@@ -109,10 +109,10 @@ impl<'l, Stringish> JsonEvents<'l, Stringish> for JsonEventParser
 where
 Stringish : std::convert::AsRef<[u8]> + std::convert::From<std::string::String> + 'l
 {
-  fn next_event<'a>(&'a mut self) -> Result<JsonEvent<Stringish>, Box<(dyn std::error::Error)>> {
+  fn next_event<'a>(&'a mut self) -> Result<crate::sender::Ptr<JsonEvent<Stringish>>, Box<(dyn std::error::Error)>> {
     use json_event_parser::ParseError;
     match self.0.read_next_event() {
-      Ok(ref jep_event) => Ok(JsonEvent::from(jep_event)),
+      Ok(ref jep_event) => Ok(crate::sender::Ptr::new(jep_event.into())),
       Err(ParseError::Io(err)) => {
         Err(format!("{err:?}").into())
       }
@@ -125,14 +125,15 @@ Stringish : std::convert::AsRef<[u8]> + std::convert::From<std::string::String> 
         // json_event_parser::SyntaxError{location, message}
         let Range{start, ..} : Range<TextPosition> = syntax_error.location();
         let msg : String = syntax_error.message().into();
-        Ok(JsonEvent::Error{line : start.line, col : start.column, message: msg.into()})
+        let ev = JsonEvent::Error{line : start.line, col : start.column, message: msg.into()};
+        Ok(crate::sender::Ptr::new(ev))
       }
     }
   }
 }
 
 impl Iterator for JsonEventParser {
-  type Item = JsonEvent<String>;
+  type Item = crate::sender::Ptr<JsonEvent<String>>;
 
   fn next(&mut self) -> Option<<Self as Iterator>::Item> {
     match self.next_event() {

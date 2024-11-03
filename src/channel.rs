@@ -3,6 +3,8 @@
 use crate::parser::JsonEvents;
 use crate::jsonpath::JsonPath;
 use crate::sender::Event;
+use crate::sender::Sender;
+use crate::sender::Ptr;
 
 pub trait Producer<T,E : std::error::Error> {
   fn send(&mut self, a: T) -> Result<(),E>;
@@ -14,6 +16,8 @@ pub trait Consumer<T,E : std::error::Error + ?Sized> {
 
 // implementation of Producer and Consumer for rtrb ring buffer
 pub mod rb {
+  use super::{Event,Ptr};
+
   pub struct RbProducer<T>(pub rtrb::Producer<T>);
 
   impl<T> super::Producer<T, rtrb::PushError<T>> for RbProducer<T> {
@@ -57,24 +61,26 @@ pub mod rb {
   impl<T : Clone + std::fmt::Debug + 'static> crate::sender::Sender<T> for RbProducer<super::Event<T>> {
     // Here's where we actually do something with the json event
     // That is, decouple the handling of the parse events, from the actual parsing stream.
-    fn send(&mut self, ev: Box<crate::sender::Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
+    fn send(&mut self, ev: Ptr<crate::sender::Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
       // wrangle rtrb::PushError into std::error::Error
-      Ok(super::Producer::send(self, *ev)?)
+      Ok(super::Producer::send(self, Ptr::<Event<T>>::into_inner(ev).unwrap())?)
     }
   }
 }
 
 // implementation of Consumer and Sender for crossbeam::channel
 pub mod ch {
+  use super::{Event,Ptr};
+
   impl<T,E : std::error::Error + ?Sized> super::Consumer<T,E> for crossbeam::channel::Receiver<T> {
     fn recv(&mut self) -> Result<T, Box<dyn std::error::Error>> {
       Ok(crossbeam::channel::Receiver::recv(self)?)
     }
   }
 
-  impl<T: std::marker::Send + 'static> crate::sender::Sender<T> for crossbeam::channel::Sender<crate::channel::Event<T>> {
-    fn send(&mut self, ev: Box<crate::channel::Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
-      Ok(crossbeam::channel::Sender::send(self, *ev)?)
+  impl<T: std::marker::Send + 'static + std::marker::Sync> crate::sender::Sender<T> for crossbeam::channel::Sender<crate::channel::Event<T>> {
+    fn send(&mut self, ev: Ptr<crate::channel::Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
+      Ok(crossbeam::channel::Sender::send(self, Ptr::<Event<T>>::into_inner(ev).unwrap())?)
     }
   }
 }
@@ -137,7 +143,7 @@ pub fn channels(jev : &mut dyn JsonEvents<String>) {
   {
     use crate::handler::Handler;
     let visitor = crate::valuer::Valuer(|_| true);
-    let tx = &mut tx as &mut dyn crate::sender::Sender<SendValue>;
+    let tx = &mut tx as &mut dyn Sender<SendValue>;
     visitor.value(jev, JsonPath::new(), 0, tx).unwrap_or_else(|_| println!("uhoh"));
   }
 
