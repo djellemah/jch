@@ -4,6 +4,7 @@ use crate::sender::Event;
 use crate::sender::Sender;
 
 // This is a lot of machinery just to call a function :-\
+#[allow(clippy::type_complexity)]
 pub struct FnSnd<SendValue>(pub fn(Event<SendValue>) -> Result<(), Box<dyn std::error::Error>>);
 
 impl<SendValue> Sender<SendValue> for FnSnd<SendValue>

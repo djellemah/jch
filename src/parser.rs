@@ -109,7 +109,7 @@ impl<'l, Stringish> JsonEvents<'l, Stringish> for JsonEventParser
 where
 Stringish : std::convert::AsRef<[u8]> + std::convert::From<std::string::String> + 'l
 {
-  fn next_event<'a>(&'a mut self) -> Result<crate::sender::Ptr<JsonEvent<Stringish>>, Box<(dyn std::error::Error)>> {
+  fn next_event(&mut self) -> Result<crate::sender::Ptr<JsonEvent<Stringish>>, Box<(dyn std::error::Error)>> {
     use json_event_parser::ParseError;
     match self.0.read_next_event() {
       Ok(ref jep_event) => Ok(crate::sender::Ptr::new(jep_event.into())),

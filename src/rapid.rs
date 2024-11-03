@@ -153,6 +153,7 @@ impl RustHandler {
 // #[cxx::bridge(namespace = "your_namespace_here")]
 // along with relevant namespaces in c++ wrapper
 #[cxx::bridge]
+#[allow(clippy::all)]
 pub mod ffi {
     // Shared structures
 
@@ -235,7 +236,7 @@ use crate::parser::JsonEvents;
 
 impl JsonEvents<'_,String> for ChannelStreamer {
   #[inline]
-  fn next_event<'a>(&'a mut self) -> std::result::Result<crate::sender::Ptr<JsonEvent<String>>, Box<dyn std::error::Error>> {
+  fn next_event(&mut self) -> std::result::Result<crate::sender::Ptr<JsonEvent<String>>, Box<dyn std::error::Error>> {
     while !self.0.is_abandoned() {
       match self.0.pop() {
         Ok(jev) => return Ok(crate::sender::Ptr::new(jev)),

@@ -66,10 +66,10 @@ impl<V> ShredWriter<V>
   }
 }
 
-impl<'a, V: AsRef<[u8]> + std::fmt::Debug> ShredWriter<V>
+impl<V: AsRef<[u8]> + std::fmt::Debug> ShredWriter<V>
 {
   /// Writes events from our event source, whose ultimate source is a streaming parser.
-  pub fn write_msgpack_value(&mut self, ev : &'a sender::Event<V>)
+  pub fn write_msgpack_value(&mut self, ev : &sender::Event<V>)
   {
     use sender::Event;
     match ev {
