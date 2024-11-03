@@ -92,6 +92,7 @@ pub struct ValueSender;
 impl Sender<serde_json::Value> for ValueSender {
   // Here's where we actually do something with the json event
   // That is, decouple the handling of the parse events, from the actual parsing stream.
+  #[allow(clippy::unit_arg)]
   fn send<'a>(&mut self, ev: crate::sender::Ptr<Event<serde_json::Value>>) -> Result<(), Box<dyn std::error::Error>> {
     Ok(println!("sent {ev:?}"))
   }
