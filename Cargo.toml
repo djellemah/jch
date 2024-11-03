@@ -4,19 +4,11 @@ version = "0.1.2"
 edition = "2021"
 default-run = "jch"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-# serde = "*"
-# serde_json = "*"
-
-countio = "*"
 serde_json = "*"
 # see also https://docs.rs/im/latest/im/
 rpds = { version = "1.1", features = ["serde"] }
-archery = "*"
-serde_yaml = "*"
-rmp-serde = "*"
-rmp = "*"
+rmp = "0.8.14"
 
 ####################
 # json parsers
