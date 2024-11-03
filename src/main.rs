@@ -1,5 +1,4 @@
 use jch::plain;
-use jch::valuer;
 use jch::channel;
 use jch::shredder;
 use jch::parser;
@@ -8,6 +7,7 @@ use jch::schema;
 use jch::handler;
 use jch::fn_snd;
 
+use std::marker::PhantomData;
 use std::process::exit;
 
 /// The most useful thing this does is calculate a Schema for a json file. Really fast.
@@ -35,7 +35,7 @@ fn main() {
       let sender = &mut fn_snd::FnSnd( |ev| { println!("fn_snd {ev:?}"); Ok(())} );
 
       // Sends things as copies rather than references, and always returns true for path matches.
-      let visitor = plain::Plain(|_| true);
+      let visitor = plain::Plain(|_| true, PhantomData::<_>);
 
       use handler::Handler;
       visitor
@@ -43,14 +43,16 @@ fn main() {
         .unwrap_or_else(|err| eprintln!("ending event reading because {err:?}"));
     }
     ["-v", rst @ ..] => {
+      use jch::valuer;
       let istream = jch::make_readable(rst);
       let mut jevstream = parser::JsonEventParser::new(istream);
 
       // accept all paths, and convert leafs to serde_json::Value
       let visitor = valuer::Valuer(|_path| true);
-      // just print them out
-      // let sender = &mut valuer::ValueSender;
-      let sender = &mut fn_snd::FnSnd(|ev| Ok(println!("{ev:?}")));
+
+      // just print the output from visitor, which understands serde_json Value
+      let sender : &mut fn_snd::FnSnd<serde_json::value::Value> = &mut fn_snd::FnSnd(|ev| Ok(println!("{ev:?}")));
+
       // go and doit
       use handler::Handler;
       visitor

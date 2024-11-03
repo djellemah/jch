@@ -1,10 +1,11 @@
 //! Send parse events across a channel or ringbuffer, to decouple parsing from handling.
 
-use crate::parser::JsonEvents;
+use std::sync::Arc;
+
 use crate::jsonpath::JsonPath;
+use crate::parser::JsonEventSource;
 use crate::sender::Event;
-use crate::sender::Sender;
-use crate::sender::Ptr;
+use crate::sender;
 
 pub trait Producer<T,E : std::error::Error> {
   fn send(&mut self, a: T) -> Result<(),E>;
@@ -16,7 +17,8 @@ pub trait Consumer<T,E : std::error::Error + ?Sized> {
 
 // implementation of Producer and Consumer for rtrb ring buffer
 pub mod rb {
-  use super::{Event,Ptr};
+  use std::sync::Arc;
+  use super::Event;
 
   pub struct RbProducer<T>(pub rtrb::Producer<T>);
 
@@ -57,20 +59,24 @@ pub mod rb {
     }
   }
 
+  use crate::sender;
   /// To accept events from Handler
-  impl<T : Clone + std::fmt::Debug + 'static> crate::sender::Sender<T> for RbProducer<super::Event<T>> {
+  impl<T : Clone + std::fmt::Debug + 'static + Send + Sync> sender::Sender<Event<T>,Arc<Event<T>>> for RbProducer<super::Event<T>> {
     // Here's where we actually do something with the json event
     // That is, decouple the handling of the parse events, from the actual parsing stream.
-    fn send(&mut self, ev: Ptr<crate::sender::Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
+    fn send(&mut self, ev: Arc<crate::sender::Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
       // wrangle rtrb::PushError into std::error::Error
-      Ok(super::Producer::send(self, Ptr::<Event<T>>::into_inner(ev).unwrap())?)
+      Ok(super::Producer::send(self, Arc::<Event<T>>::into_inner(ev).unwrap())?)
     }
   }
 }
 
 // implementation of Consumer and Sender for crossbeam::channel
 pub mod ch {
-  use super::{Event,Ptr};
+  use std::ops::Deref;
+
+  use super::Event;
+  use crate::sender;
 
   impl<T,E : std::error::Error + ?Sized> super::Consumer<T,E> for crossbeam::channel::Receiver<T> {
     fn recv(&mut self) -> Result<T, Box<dyn std::error::Error>> {
@@ -78,14 +84,30 @@ pub mod ch {
     }
   }
 
-  impl<T: std::marker::Send + 'static + std::marker::Sync> crate::sender::Sender<T> for crossbeam::channel::Sender<crate::channel::Event<T>> {
-    fn send(&mut self, ev: Ptr<crate::channel::Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
-      Ok(crossbeam::channel::Sender::send(self, Ptr::<Event<T>>::into_inner(ev).unwrap())?)
+  // For some wrapper (incl Arc and Rc)
+  impl<T,W> sender::Sender<Event<T>,W>
+  for crossbeam::channel::Sender<crate::channel::Event<T>>
+  where
+    T: Send + 'static,
+    W : Deref<Target=Event<T>> + Send + Into<Event<T>>
+  {
+    fn send(&mut self, ev: W) -> Result<(), Box<dyn std::error::Error>> {
+      Ok(crossbeam::channel::Sender::send(self, ev.into())?)
+    }
+  }
+
+
+  // For no wrapper
+  impl<T: Send + Sync + 'static>
+  sender::Sender<Event<T>,sender::NonWrap<Event<T>>>
+  for crossbeam::channel::Sender<sender::NonWrap<crate::channel::Event<T>>> {
+    fn send(&mut self, ev: sender::NonWrap<Event<T>>) -> Result<(), Box<dyn std::error::Error>> {
+      Ok(crossbeam::channel::Sender::send(self, ev)?)
     }
   }
 }
 
-pub fn ringbuffer(jev : &mut dyn JsonEvents<String>) {
+pub fn ringbuffer(jev : &mut dyn JsonEventSource<String>) {
   // this seems to be about optimal wrt performance
   const RING_BUFFER_BOUND : usize = (2usize).pow(21); // 8192
 
@@ -112,13 +134,19 @@ pub fn ringbuffer(jev : &mut dyn JsonEvents<String>) {
   {
     use crate::handler::Handler;
     let visitor = crate::valuer::Valuer(|_| true);
-    visitor.value(jev, JsonPath::new(), 0, &mut tx as &mut dyn crate::sender::Sender<SendValue>).unwrap_or_else(|_| println!("uhoh"));
+    visitor.value(jev, JsonPath::new(), 0, &mut tx as &mut dyn sender::Sender<Event<SendValue>, Arc<Event<SendValue>>>).unwrap_or_else(|_| println!("uhoh"));
   }
 
   cons_thr.join().unwrap();
 }
 
-pub fn channels(jev : &mut dyn JsonEvents<String>) {
+impl<T> From<Arc<Event<T>>> for Event<T> {
+  fn from(value: Arc<Event<T>>) -> Self {
+    Arc::<Event<T>>::into_inner(value).expect("There must be a strong reference here, otherwise something else broke")
+  }
+}
+
+pub fn channels(jev : &mut dyn JsonEventSource<String>) {
   // this seems to be about optimal wrt performance
   const CHANNEL_SIZE : usize = 8192;
 
@@ -143,7 +171,7 @@ pub fn channels(jev : &mut dyn JsonEvents<String>) {
   {
     use crate::handler::Handler;
     let visitor = crate::valuer::Valuer(|_| true);
-    let tx = &mut tx as &mut dyn Sender<SendValue>;
+    let tx = &mut tx as &mut dyn sender::Sender<Event<SendValue>,Arc<Event<SendValue>>>;
     visitor.value(jev, JsonPath::new(), 0, tx).unwrap_or_else(|_| println!("uhoh"));
   }
 

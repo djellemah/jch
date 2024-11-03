@@ -4,7 +4,6 @@ This traverses/handles the incoming json events from the streaming parser.
 use crate::parser::JsonEventSource;
 use crate::parser::JsonEvent;
 use crate::sender::Event;
-use crate::sender::Ptr;
 use crate::jsonpath::*;
 
 /**
@@ -15,16 +14,27 @@ threading those functions through the JsonEvent handlers.
 
 Effectively it's a
 visitor with accept = match_path and visit = maybe_send_value
+
+'l -  Sender must live at least as long as Handler. Otherwise what would Handler send to?
+
+Sender - has a send() call, which an instance of SendWrapper is passed to.
+
+SendValue - the type that's actually sent, usually sender::Event
+
+SendWrapper - a wrapper type for SendValue, eg Rc Arc Box sender::NonWrap
 */
-pub trait Handler<'l, Sender,SendValue>
+pub trait Handler<'l, SendValue, SendWrapper, Sender>
 where
-  Sender : crate::sender::Sender<SendValue> + ?Sized + 'l
+  SendWrapper : Send + From<Event<SendValue>> + std::ops::Deref<Target=Event<SendValue>>,
+  Sender : crate::sender::Sender<SendWrapper::Target,SendWrapper> + ?Sized + 'l,
 {
+  // type EventType;
+
   // TODO this is optional?
   fn match_path(&self, path : &JsonPath) -> bool;
 
   /// This will be called for each leaf value, along with its path.
-  fn maybe_send_value(&self, path : &JsonPath, ev : crate::sender::Ptr<JsonEvent<String>>, tx : &mut Sender)
+  fn maybe_send_value(&self, path : &JsonPath, ev : JsonEvent<String>, tx : &mut Sender)
   -> Result<(),Box<dyn std::error::Error>>
   ;
 
@@ -44,7 +54,7 @@ where
           // NOTE rpds persistent vector
           let loop_parents = parents.push_back(index.into());
           use JsonEvent::*;
-          let res = match ev.as_ref() {
+          let res = match ev {
             // ok we have a leaf, so match path then send value
             String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, ev, tx),
 
@@ -56,14 +66,17 @@ where
             ObjectKey(_) => panic!("should never receive ObjectKey {parents}"),
             EndObject => panic!("should never receive EndObject {parents}"),
 
-            Eof => break tx.send(Ptr::new(Event::Finished)),
-            err@ Error{..} => tx.send(Ptr::new(Event::Error(loop_parents.into(), format!("{err}"))))
+            Eof => break tx.send(SendWrapper::from(Event::Finished)),
+            err@ Error{..} => {
+              let ev = Event::Error(loop_parents.into(), format!("{err}"));
+              tx.send(SendWrapper::from(ev))
+            }
           };
           if res.is_err() { break res };
           index += 1;
         },
         // This means some kind of io error, ie not a json parse error. So bail out.
-        Err(err) => break tx.send(Ptr::new(Event::Error(parents.into(), format!("{err}")))),
+        Err(err) => break tx.send(SendWrapper::from(Event::Error(parents.into(), format!("{err}")))),
       }
     }
   }
@@ -76,7 +89,7 @@ where
       match jevs.next_event() {
         Ok(ev) => {
           use JsonEvent::*;
-          let res = match ev.as_ref() {
+          let res = match ev {
             // ok we have a leaf, so emit the value and path.
             // no need to shunt this through value(...)
             String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, ev, tx),
@@ -89,13 +102,13 @@ where
             EndObject => return Ok(()),
 
             // fin
-            Eof => break tx.send(Ptr::new(Event::Finished)),
-            err@ Error{..} => tx.send(Ptr::new(Event::Error((&parents).into(), format!("{err}")))),
+            Eof => break tx.send(SendWrapper::from(Event::Finished)),
+            err@ Error{..} => tx.send(SendWrapper::from(Event::Error((&parents).into(), format!("{err}")))),
           };
           if res.is_err() { break res };
         },
         // This means some kind of io error, ie not a json parse error. So bail out.
-        Err(err) => break tx.send(Ptr::new(Event::Error(parents.into(),format!("{err}")))),
+        Err(err) => break tx.send(SendWrapper::from(Event::Error(parents.into(),format!("{err}")))),
       };
     }
   }
@@ -108,7 +121,7 @@ where
     match jevs.next_event() {
       Ok(ev) => {
         use JsonEvent::*;
-        match ev.as_ref() {
+        match ev {
           // ok we have a leaf, so emit the value and path
           String(_) | Number(_)  | Boolean(_) | Null => self.maybe_send_value(&parents, ev, tx),
 
@@ -120,12 +133,12 @@ where
           EndObject => panic!("should never receive EndObject {parents}"),
 
           // fin
-          Eof => tx.send(Ptr::new(Event::Finished)),
-          err@ Error{..} => tx.send(Ptr::new(Event::Error(parents.into(), format!("{err}")))),
+          Eof => tx.send(SendWrapper::from(Event::Finished)),
+          err@ Error{..} => tx.send(SendWrapper::from(Event::Error(parents.into(), format!("{err}")))),
         }
       },
       // This means some kind of io error, ie not a json parse error. So bail out.
-      Err(err) => tx.send(Ptr::new(Event::Error(parents.into(),format!("{err}")))),
+      Err(err) => tx.send(SendWrapper::from(Event::Error(parents.into(),format!("{err}")))),
     }
   }
 }

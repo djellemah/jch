@@ -20,11 +20,11 @@ Might grow some kind of path-filtering languages, like jsonpath or xpath.
 // parser and traits
 pub mod parser;
 pub mod jsonpath;
+pub mod handler;
 pub mod sendpath;
 pub mod sender;
-pub mod handler;
 
-// handlers and sender implementations
+// implementations of handler and sender
 pub mod plain;
 pub mod shredder;
 pub mod schema;
@@ -38,7 +38,7 @@ pub mod rapid;
 /// The idea here was something like ruby's ARGF, ie stdin and then all command line args that are files.
 /// But currently it only handles either stdin or a single file.
 pub fn make_readable<S>(maybe_readable_args : &[S]) -> Box<dyn std::io::BufRead>
-where S : AsRef<str> + std::convert::AsRef<std::path::Path> + std::fmt::Debug
+where S : AsRef<str> + AsRef<std::path::Path> + std::fmt::Debug
 {
   // use std::io::Read;
   match maybe_readable_args {

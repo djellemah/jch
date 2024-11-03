@@ -82,8 +82,7 @@ pub struct RustHandler
 use crate::parser::JsonEvent;
 
 impl RustHandler {
-  pub fn new(tx : rtrb::Producer<JsonEvent<String>>) -> Self
-  {
+  pub fn new(tx : rtrb::Producer<JsonEvent<String>>) -> Self {
     Self{tx}
   }
 
@@ -236,10 +235,10 @@ use crate::parser::JsonEventSource;
 
 impl JsonEventSource<'_,String> for ChannelStreamer {
   #[inline]
-  fn next_event(&mut self) -> std::result::Result<crate::sender::Ptr<JsonEvent<String>>, Box<dyn std::error::Error>> {
+  fn next_event(&mut self) -> std::result::Result<JsonEvent<String>, Box<dyn std::error::Error>> {
     while !self.0.is_abandoned() {
       match self.0.pop() {
-        Ok(jev) => return Ok(crate::sender::Ptr::new(jev)),
+        Ok(jev) => return Ok(jev),
         Err(rtrb::PopError::Empty) => {
           // tell the producer to carry on
           self.1.unpark();
@@ -247,7 +246,7 @@ impl JsonEventSource<'_,String> for ChannelStreamer {
         },
       }
     }
-    Ok(crate::sender::Ptr::new(JsonEvent::Eof))
+    Ok(JsonEvent::Eof)
   }
 }
 

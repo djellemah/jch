@@ -24,7 +24,7 @@ where T : AsRef<[u8]> // because we want storage
 }
 
 impl<T> std::fmt::Display for JsonEvent<T>
-where T : std::convert::AsRef<[u8]> + std::fmt::Debug + std::fmt::Display
+where T : AsRef<[u8]> + std::fmt::Debug + std::fmt::Display
 {
   fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     if let Self::Error{line, col, message} = &self {
@@ -63,7 +63,7 @@ where T : AsRef<[u8]> + From<String> // because we want storage + conversion fro
 }
 
 impl<T> From<json_event_parser::JsonEvent<'_>> for JsonEvent<T>
-where T : AsRef<[u8]> + From<String> //+ ToOwned<Owned=T> + for<'b> std::convert::From<&'b std::borrow::Cow<'b, str>>
+where T : AsRef<[u8]> + From<String>
 {
   fn from(jev: json_event_parser::JsonEvent<'_>) -> Self {
     Self::from(&jev)
@@ -93,7 +93,7 @@ fn from_vec() {
 pub trait JsonEventSource<'l, Stringish>
 where Stringish : 'l + AsRef<[u8]> + From<String> // because we want storage + conversion from Cow<'_,str>
 {
-   fn next_event(&mut self) -> Result<crate::sender::Ptr<JsonEvent<Stringish>>, Box<dyn std::error::Error>>;
+   fn next_event(&mut self) -> Result<JsonEvent<Stringish>, Box<dyn std::error::Error>>;
 }
 
 /// Source of json events from json_event_parser
@@ -107,15 +107,13 @@ impl JsonEventParser {
 
 impl<'l, Stringish> JsonEventSource<'l, Stringish> for JsonEventParser
 where
-Stringish : std::convert::AsRef<[u8]> + std::convert::From<std::string::String> + 'l
+  Stringish : AsRef<[u8]> + From<std::string::String> + 'l
 {
-  fn next_event(&mut self) -> Result<crate::sender::Ptr<JsonEvent<Stringish>>, Box<(dyn std::error::Error)>> {
+  fn next_event(&mut self) -> Result<JsonEvent<Stringish>, Box<(dyn std::error::Error)>> {
     use json_event_parser::ParseError;
     match self.0.read_next_event() {
-      Ok(ref jep_event) => Ok(crate::sender::Ptr::new(jep_event.into())),
-      Err(ParseError::Io(err)) => {
-        Err(format!("{err:?}").into())
-      }
+      Ok(ref jep_event) => Ok(jep_event.into()),
+      Err(ParseError::Io(err)) => Err(format!("{err:?}").into()),
       Err(ParseError::Syntax(syntax_error)) => {
         use std::ops::Range;
         // use json_event_parser::SyntaxError;
@@ -126,19 +124,19 @@ Stringish : std::convert::AsRef<[u8]> + std::convert::From<std::string::String> 
         let Range{start, ..} : Range<TextPosition> = syntax_error.location();
         let msg : String = syntax_error.message().into();
         let ev = JsonEvent::Error{line : start.line, col : start.column, message: msg.into()};
-        Ok(crate::sender::Ptr::new(ev))
+        Ok(ev)
       }
     }
   }
 }
 
 impl Iterator for JsonEventParser {
-  type Item = crate::sender::Ptr<JsonEvent<String>>;
+  type Item = JsonEvent<String>;
 
   fn next(&mut self) -> Option<<Self as Iterator>::Item> {
     match self.next_event() {
-     Ok(jev) => Some(jev),
-     err => panic!("{err:?}"),
+      Ok(jev) => Some(jev),
+      err => panic!("{err:?}"),
     }
   }
 }

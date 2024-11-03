@@ -4,6 +4,7 @@ One way to view a tree is a map of path => value, or for its schema path => type
 This parses a json document and collects the type for each path, including some basic statistics.
 */
 
+use std::sync::Arc;
 use std::cell::RefCell;
 
 use crate::parser::JsonEventSource;
@@ -271,19 +272,20 @@ impl EventConverter {
 }
 
 type SendValue = SchemaType;
+type SendEvent = crate::sender::Event<SendValue>;
 
-impl<'l> Handler<'l, (dyn Sender<SendValue> + 'l),SendValue> for EventConverter {
+impl<'l> Handler<'l, SendValue, Arc<SendEvent>, (dyn Sender<SendEvent, Arc<SendEvent>> + 'l)> for EventConverter {
   // collect all paths
   #[inline]
   fn match_path(&self, _json_path : &JsonPath) -> bool {true}
 
-  fn maybe_send_value(&self, path : &JsonPath, ev : crate::sender::Ptr<JsonEvent<String>>, tx : &mut (dyn Sender<SendValue> + 'l))
+  fn maybe_send_value(&self, path : &JsonPath, ev : JsonEvent<String>, tx : &mut (dyn Sender<SendEvent, Arc<SendEvent>> + 'l))
   -> Result<(),Box<dyn std::error::Error>>
   {
     if !self.match_path(path) { return Ok(()) }
-    let schema_type = self.collect_type(path, ev.as_ref());
+    let schema_type = self.collect_type(path, &ev);
     tx
-      .send(crate::sender::Ptr::new(Event::Value(path.into(), schema_type.into())))
+      .send(Arc::new(Event::Value(path.into(), schema_type)))
       .unwrap_or_else(|err| panic!("cannot send {ev:?} because {err:?}"));
     Ok(())
   }
@@ -331,7 +333,7 @@ impl SchemaCollector {
             use NumberType::*;
             let kind_option = leaf_kinds.iter().find(|Leaf{kind: stored_kind, ..}| {
               #[allow(clippy::match_like_matches_macro)] // no actually it reads better like this
-              match (value_type.as_ref(), stored_kind) {
+              match (value_type, stored_kind) {
                 (String(_), String(_)) => true,
                 (Number(Unsigned(_)), Number(Unsigned(_))) => true,
                 (Number(Signed(_,_)), Number(Signed(_,_))) => true,
@@ -351,7 +353,7 @@ impl SchemaCollector {
 
                 // update the max/min and other aggregates here
                 // transfer values from value_type (ie the current leaf value) to aggregate (ie in the schema we're building)
-                let updated_aggregate_option = match (value_type.as_ref(),&*kind.aggregate.borrow()) {
+                let updated_aggregate_option = match (value_type,&*kind.aggregate.borrow()) {
                   (&String(val_n), &String(agg_n)) => Some(String(std::cmp::max(val_n,agg_n))),
                   (&Number(Unsigned(val_max)), &Number(Unsigned(agg_max))) => Some(Number(Unsigned(std::cmp::max(val_max,agg_max)))),
                   (&Number(Signed(val_min,val_max)), &Number(Signed(agg_min,agg_max))) => Some(Number(Signed(std::cmp::min(val_min,agg_min), std::cmp::max(val_max,agg_max)))),
@@ -363,14 +365,14 @@ impl SchemaCollector {
                   kind.aggregate.replace(updated_aggregate);
                 }
               }
-              None => { leaf_kinds.insert(Leaf::new(value_type.as_ref().clone())); }
+              None => { leaf_kinds.insert(Leaf::new(value_type.clone())); }
             }
           },
           None => {
             // There are as yet no leafs for this path, so create a new leaf_kinds structure
             #[allow(clippy::mutable_key_type)] // addressed by std::hash::Hash of Leaf
             let mut leaf_kinds = LeafKinds::new();
-            leaf_kinds.insert(Leaf::new(value_type.as_ref().clone()));
+            leaf_kinds.insert(Leaf::new(value_type.clone()));
             self.leaf_paths.insert(path, leaf_kinds);
           }
         }
@@ -410,9 +412,9 @@ impl std::fmt::Display for SchemaCollector {
   }
 }
 
-impl Sender<SchemaType> for SchemaCollector {
+impl Sender<Event<SchemaType>, Arc<Event<SchemaType>>> for SchemaCollector {
   // Fit in with what visitor wants
-  fn send(&mut self, ev: crate::sender::Ptr<Event<SchemaType>>) -> Result<(), Box<dyn std::error::Error>> {
+  fn send(&mut self, ev: Arc<Event<SchemaType>>) -> Result<(), Box<dyn std::error::Error>> {
     self.process_event(&ev);
     Ok(())
   }
