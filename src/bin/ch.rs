@@ -29,12 +29,10 @@ That rust prolog
 */
 
 mod ruby {
-  // use std::intrinsics::pref_align_of;
-
-use jch::sender::Sender;
   use jch::jsonpath;
   use jch::jsonpath::JsonPath;
   use jch::parser::JsonEvent;
+  use jch::sender::Sender;
 
   use jch::fn_snd;
   use jch::handler;
@@ -49,8 +47,6 @@ use jch::sender::Sender;
   #[allow(dead_code)]
   struct RubyHandler<'l> (& 'l magnus::Ruby);
 
-  type SendValue = jch::parser::JsonEvent<String>;
-
   impl<'l> RubyHandler<'l> {
     fn new(ruby : & 'l magnus::Ruby) -> Self {
       // RUBY_YJIT_ENABLE= yes/true/1 no/false/0
@@ -64,8 +60,12 @@ use jch::sender::Sender;
     }
   }
 
-  impl<'l> jch::handler::Handler<'l, dyn jch::sender::Sender<SendValue> + 'l,SendValue> for RubyHandler<'l>
-  where SendValue: std::fmt::Debug + Clone
+  type SendValue = jch::parser::JsonEvent<String>;
+  type SendEvent = jch::sender::Event<SendValue>;
+  type SendWrapper = jch::sender::NonWrap<SendEvent>;
+
+  impl<'l> jch::handler::Handler<'l, SendValue, SendWrapper, dyn jch::sender::Sender<SendEvent,SendWrapper> + 'l>
+  for RubyHandler<'l>
   {
     fn match_path(&self, path : &JsonPath) -> bool {
       use magnus::value::ReprValue; // for funcall
@@ -85,13 +85,13 @@ use jch::sender::Sender;
     }
 
     /// send the event provided the fn at self.0 returns true
-    fn maybe_send_value(&self, path : &JsonPath, ev : &JsonEvent<String>, tx : &mut (dyn Sender<SendValue> + 'l))
+    fn maybe_send_value(&self, path : &JsonPath, ev : JsonEvent<std::string::String>, tx : &mut (dyn Sender<SendEvent, SendWrapper> + 'l))
     -> Result<(),Box<dyn std::error::Error>>
     {
       if self.match_path(path) {
         use jch::sender::Event;
         tx
-          .send(Box::new(Event::Value(path.into(), ev.clone())))
+          .send(Event::Value(path.into(), ev.clone()).into())
           .unwrap_or_else(|err| eprintln!("error sending {ev:?} because {err:?}"))
       }
       // ;
