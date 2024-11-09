@@ -118,6 +118,7 @@ RAPIDJSON_INCLUDE = "rapidjson/include"
 ```
 
 # 1000 words
+scroll right >>>
 ```
                                                                             +------------+
 +----------+   +----------+                                             +->-| FnSnd      |
@@ -135,6 +136,7 @@ RAPIDJSON_INCLUDE = "rapidjson/include"
                                                                         +->-| RingBuffer |
                                                                             +------------+
 ```
+scroll right >>>
 # Design
 
 This is for the people who read this far, and feel like reading some more. I flatter myself and fondly imagine that you like my prose style.
