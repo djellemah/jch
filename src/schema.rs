@@ -274,7 +274,7 @@ impl EventConverter {
 type SendValue = SchemaType;
 type SendEvent = crate::sender::Event<SendValue>;
 
-impl<'l> Handler<'l, SendValue, Arc<SendEvent>, (dyn Sender<SendEvent, Arc<SendEvent>> + 'l)> for EventConverter {
+impl<'l> Handler<'l, SendValue, Arc<SendEvent>, dyn Sender<SendEvent, Arc<SendEvent>> + 'l> for EventConverter {
   // collect all paths
   #[inline]
   fn match_path(&self, _json_path : &JsonPath) -> bool {true}

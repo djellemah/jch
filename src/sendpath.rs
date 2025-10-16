@@ -11,6 +11,7 @@ mod like_jsonpath {
   use super::JsonPath;
 
   #[derive(Debug,Ord,PartialOrd,Eq,PartialEq,Clone)]
+  #[allow(dead_code)]
   pub struct SendPath(pub JsonPath);
 
   impl From<&JsonPath> for SendPath {

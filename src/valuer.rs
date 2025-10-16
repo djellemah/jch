@@ -42,7 +42,7 @@ pub struct Valuer(pub fn(&JsonPath) -> bool);
 
 type SendValue = serde_json::Value;
 
-impl<'l, SendValue, SendWrapper> Handler<'l, SendValue, SendWrapper, (dyn sender::Sender<Event<SendValue>, SendWrapper> + 'l)>
+impl<'l, SendValue, SendWrapper> Handler<'l, SendValue, SendWrapper, dyn sender::Sender<Event<SendValue>, SendWrapper> + 'l>
 for Valuer
 where
   SendValue : 'l + From<serde_json::Value>,

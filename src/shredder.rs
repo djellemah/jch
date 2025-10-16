@@ -182,7 +182,7 @@ type SendEvent = sender::Event<SendValue>;
 
 use crate::sender::Sender;
 
-impl<'l> Handler<'l, SendValue, Arc<SendEvent>, (dyn Sender<SendEvent,Arc<SendEvent>> + 'l)> for MsgPacker {
+impl<'l> Handler<'l, SendValue, Arc<SendEvent>, dyn Sender<SendEvent,Arc<SendEvent>> + 'l> for MsgPacker {
   // TODO handle both ref to buffer and buffer
 
   // filters events from the streaming parser
