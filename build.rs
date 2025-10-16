@@ -8,7 +8,8 @@ fn main() {
     if !rapidjson_include.exists() {
         println!(r#"
             RAPIDJSON_INCLUDE env var path "{}" does not exist.
-            You can also set RAPIDJSON_INCLUDE it in .cargo/config.toml under the [env] table.
+            Possibly you need to install the rapidjson dev library.
+            You can also set RAPIDJSON_INCLUDE in .cargo/config.toml under the [env] table.
         "#, rapidjson_include.display());
         std::process::exit(1)
     }
